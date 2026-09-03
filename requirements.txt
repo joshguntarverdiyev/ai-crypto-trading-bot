@@ -1,0 +1,10 @@
+# Phase 0 runtime dependencies.
+# pyproject.toml is the authoritative source; this file mirrors the runtime deps
+# for environments/tooling that expect requirements.txt. Keep the two in sync.
+#
+# Dev tooling (pytest, ruff, mypy) lives in pyproject.toml [project.optional-dependencies].dev
+# Install runtime + dev with:  pip install -e ".[dev]"
+
+pydantic>=2,<3
+pydantic-settings>=2,<3
+SQLAlchemy>=2,<3

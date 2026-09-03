@@ -1,0 +1,14 @@
+# Minimal development compose for the Phase 0 foundation.
+# Single service, local volume for data/logs. No database server, no trading
+# services, no monitoring stack — those are out of Phase 0 scope.
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      LIVE_TRADING: "false"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: ["python", "-m", "app.main"]
