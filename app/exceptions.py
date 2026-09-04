@@ -37,3 +37,25 @@ class InfrastructureError(AppError):
 
 class InternalError(AppError):
     """Unexpected internal invariant violation. Indicates a bug."""
+
+
+# --- Phase 1: market-data domain errors ---
+# These are EXCEPTIONS for infrastructure/programming problems only. Per-candle
+# data-quality problems (malformed values, gaps, staleness, ...) are NOT
+# exceptions — they are reported via ValidationResult (see app.market_data.validation).
+
+
+class MarketDataError(AppError):
+    """Base class for market-data infrastructure/programming errors."""
+
+
+class DataValidationError(MarketDataError):
+    """Raised when a data-validation invariant is violated programmatically."""
+
+
+class UnsupportedMarketError(MarketDataError):
+    """Requested symbol/timeframe is not supported by the adapter."""
+
+
+class AdapterError(MarketDataError):
+    """The adapter could not fetch or grossly could not parse from its source."""

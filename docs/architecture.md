@@ -42,7 +42,7 @@ Phase 0 base:
 
 | Model family | Owning phase |
 |---|---|
-| candles, market_data_snapshots | P1 |
+| **candles — IMPLEMENTED (P1)**; market_data_snapshots deferred | P1 |
 | feature_snapshots | P2 |
 | cost_calcs | P3 |
 | signals, strategy_versions | P4 |

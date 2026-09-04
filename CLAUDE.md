@@ -21,23 +21,28 @@ authoritative.
 
 ## Current phase
 
-**Phase 0 — Foundation (COMPLETE/IN PROGRESS).** Foundation infrastructure only.
+**Phase 1 — Market Data (COMPLETE).** Phase 0 foundation + the exchange-agnostic
+market-data foundation (`app/market_data/`): canonical models, deterministic
+validation, candle persistence, `MarketDataService`, offline fixture adapter.
 
-## Allowed scope (Phase 0)
+## Allowed scope (Phase 0–1)
 
 Configuration, database, models, logging, errors, time/ID utilities, offline
-bootstrap, tests, documentation, project/dev tooling.
+bootstrap, tests, docs, tooling **+ (P1)** exchange-agnostic market-data
+interfaces, canonical `Candle`/`Ticker` models, validation gate, candle
+repository/service, and the **offline** `FixtureExchangeAdapter`.
 
-## Forbidden scope (Phase 0 — do NOT implement)
+## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
-Exchange API / CCXT / market data / WebSocket / OHLCV / order book · indicators
-· regime detection · strategy / candidate signals · backtesting · paper / shadow
-/ live trading · order execution · `clientOrderId` / reconciliation · stop-loss
-execution · position sizing / risk engine · kill-switch runtime behavior · news
-/ RSS / sentiment · Anthropic/Claude API calls · Telegram bot · FastAPI/dashboard
-· tax calculation · exchange selection · API keys / secrets · real-money trading
-· simulated fills. Do not create fake implementations to make things "look
-complete." Future-phase packages must remain inert.
+Real exchange API / CCXT / network fetch / WebSocket / live market data · order
+book · indicators (EMA/RSI/ATR/MACD/…) · regime detection · strategy / candidate
+signals · cost engine · backtesting · paper / shadow / live trading · order
+execution · `clientOrderId` / reconciliation · stop-loss execution · position
+sizing / risk engine · kill-switch runtime behavior · news / RSS / sentiment ·
+Anthropic/Claude API calls · Telegram bot · FastAPI/dashboard · tax calculation ·
+exchange selection · API keys / secrets · real-money trading · simulated fills.
+Do not create fake implementations to make things "look complete." Remaining
+future-phase packages must stay inert.
 
 ## Non-negotiable rules
 

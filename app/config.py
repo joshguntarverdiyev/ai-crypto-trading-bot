@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # --- market data (Phase 1) ---
+    market_symbols: list[str] = ["BTC/USDT", "ETH/USDT"]
+    market_timeframes: list[str] = ["1h", "4h"]
+    max_staleness_intervals: int = 1
+    future_tolerance_seconds: int = 2
+    ticker_staleness_seconds: int = 30
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -77,6 +84,24 @@ class Settings(BaseSettings):
                 f"log_level must be one of {sorted(_VALID_LOG_LEVELS)}, got {value!r}"
             )
         return upper
+
+    @field_validator("market_symbols")
+    @classmethod
+    def _validate_symbols(cls, value: list[str]) -> list[str]:
+        from app.market_data.models import Symbol  # local import avoids import cycle
+
+        for item in value:
+            Symbol.parse(item)  # raises ValueError on bad format
+        return value
+
+    @field_validator("market_timeframes")
+    @classmethod
+    def _validate_timeframes(cls, value: list[str]) -> list[str]:
+        from app.market_data.models import Timeframe  # source of truth for validity
+
+        for item in value:
+            Timeframe(item)  # raises ValueError if not a supported timeframe
+        return value
 
     @model_validator(mode="after")
     def _enforce_phase0_safety(self) -> Settings:

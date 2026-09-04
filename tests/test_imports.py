@@ -20,10 +20,20 @@ CORE_MODULES = [
     "app.models.system_event",
     "app.models.error_record",
     "app.models.config_version",
+    "app.models.candle",
+    "app.models.types",
+    # Phase 1 — market data (implemented)
+    "app.market_data",
+    "app.market_data.models",
+    "app.market_data.validation",
+    "app.market_data.adapter",
+    "app.market_data.fixture_adapter",
+    "app.market_data.repository",
+    "app.market_data.service",
 ]
 
 FUTURE_PACKAGES = [
-    "app.market_data", "app.indicators", "app.regime", "app.strategy",
+    "app.indicators", "app.regime", "app.strategy",
     "app.costs", "app.news", "app.ai", "app.risk", "app.sizing",
     "app.execution", "app.tax", "app.portfolio", "app.engine",
     "app.notifications", "backtesting", "dashboard",

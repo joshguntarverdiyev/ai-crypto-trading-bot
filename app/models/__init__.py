@@ -14,6 +14,7 @@ Plan §16) reconstructable.
 from __future__ import annotations
 
 from app.models.base import Base, TimestampMixin, UUIDMixin, VersionMixin
+from app.models.candle import CandleRecord
 from app.models.config_version import ConfigVersion
 from app.models.error_record import ErrorRecord
 from app.models.system_event import SystemEvent
@@ -26,4 +27,5 @@ __all__ = [
     "SystemEvent",
     "ErrorRecord",
     "ConfigVersion",
+    "CandleRecord",
 ]
