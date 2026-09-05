@@ -9,7 +9,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from app.market_data.models import RawCandle, RawTicker
+from app.market_data.models import RawCandle, RawTicker, Symbol, Timeframe
+from app.market_data.service import MarketDataResult
+from app.market_data.validation import validate_candles
 
 BASE = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)  # multiple of 3600 and 14400
 
@@ -49,6 +51,23 @@ def valid_h1_series(n: int, **kw: object) -> list[RawCandle]:
 def now_after(n_hours: int) -> datetime:
     """A ``now`` at BASE + n hours (so candles 0..n-1 are all closed)."""
     return BASE + timedelta(hours=n_hours)
+
+
+def market_result(
+    raw: list[RawCandle],
+    *,
+    now: datetime,
+    symbol: str = "BTC/USDT",
+    timeframe: str = "1h",
+    max_staleness_intervals: int = 1,
+) -> MarketDataResult:
+    """Wrap raw candles into a Phase 1 MarketDataResult (offline, deterministic)."""
+    sym = Symbol.parse(symbol)
+    tf = Timeframe(timeframe)
+    candles, result = validate_candles(
+        raw, symbol=sym, timeframe=tf, now=now, max_staleness_intervals=max_staleness_intervals
+    )
+    return MarketDataResult(candles=candles, result=result)
 
 
 def raw_ticker(

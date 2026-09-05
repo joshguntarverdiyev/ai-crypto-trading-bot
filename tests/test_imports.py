@@ -30,10 +30,21 @@ CORE_MODULES = [
     "app.market_data.fixture_adapter",
     "app.market_data.repository",
     "app.market_data.service",
+    # Phase 2 — indicators + regime (implemented)
+    "app.indicators",
+    "app.indicators.functions",
+    "app.indicators.config",
+    "app.indicators.models",
+    "app.indicators.features",
+    "app.regime",
+    "app.regime.config",
+    "app.regime.models",
+    "app.regime.alignment",
+    "app.regime.classifier",
 ]
 
 FUTURE_PACKAGES = [
-    "app.indicators", "app.regime", "app.strategy",
+    "app.strategy",
     "app.costs", "app.news", "app.ai", "app.risk", "app.sizing",
     "app.execution", "app.tax", "app.portfolio", "app.engine",
     "app.notifications", "backtesting", "dashboard",

@@ -21,28 +21,32 @@ authoritative.
 
 ## Current phase
 
-**Phase 1 — Market Data (COMPLETE).** Phase 0 foundation + the exchange-agnostic
-market-data foundation (`app/market_data/`): canonical models, deterministic
-validation, candle persistence, `MarketDataService`, offline fixture adapter.
+**Phase 2 — Indicators + Regime (COMPLETE).** Phase 0/1 + the indicator/feature
+and market-regime foundation (`app/indicators/`, `app/regime/`): deterministic
+pure-Python EMA50/EMA200/RSI14/ATR14+ATR%, `FeatureBuilder`, descriptive
+`RegimeClassifier` (1h primary, causal 4h confirmation with source+symbol
+isolation). Compute-on-demand; no feature-persistence table; no new deps.
 
-## Allowed scope (Phase 0–1)
+## Allowed scope (Phase 0–2)
 
-Configuration, database, models, logging, errors, time/ID utilities, offline
-bootstrap, tests, docs, tooling **+ (P1)** exchange-agnostic market-data
-interfaces, canonical `Candle`/`Ticker` models, validation gate, candle
-repository/service, and the **offline** `FixtureExchangeAdapter`.
+Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
+tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
+`Candle`/`Ticker`, validation gate, repository/service, offline
+`FixtureExchangeAdapter`) **+ (P2)** deterministic indicators/features and
+**descriptive** regime classification computed from Phase 1 candles.
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
 Real exchange API / CCXT / network fetch / WebSocket / live market data · order
-book · indicators (EMA/RSI/ATR/MACD/…) · regime detection · strategy / candidate
-signals · cost engine · backtesting · paper / shadow / live trading · order
-execution · `clientOrderId` / reconciliation · stop-loss execution · position
-sizing / risk engine · kill-switch runtime behavior · news / RSS / sentiment ·
-Anthropic/Claude API calls · Telegram bot · FastAPI/dashboard · tax calculation ·
-exchange selection · API keys / secrets · real-money trading · simulated fills.
-Do not create fake implementations to make things "look complete." Remaining
-future-phase packages must stay inert.
+book · **additional indicators (MACD/Bollinger/volume-MA)** · **feature
+persistence table** · strategy / entry-exit / candidate signals · cost engine ·
+backtesting · paper / shadow / live trading · order execution · `clientOrderId`
+/ reconciliation · stop-loss execution · position sizing / risk engine ·
+kill-switch runtime behavior · news / RSS / sentiment · Anthropic/Claude API
+calls · Telegram bot · FastAPI/dashboard · tax calculation · exchange selection ·
+API keys / secrets · real-money trading · simulated fills. Regime is
+**descriptive only — never a trading signal.** Do not create fake
+implementations. Remaining future-phase packages must stay inert.
 
 ## Non-negotiable rules
 

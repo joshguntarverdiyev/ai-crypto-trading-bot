@@ -14,13 +14,17 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError as PydanticValidationError
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.exceptions import ConfigError
+
+if TYPE_CHECKING:
+    from app.indicators.config import IndicatorConfig
+    from app.regime.config import RegimeConfig
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -75,6 +79,15 @@ class Settings(BaseSettings):
     future_tolerance_seconds: int = 2
     ticker_staleness_seconds: int = 30
 
+    # --- indicators / regime (Phase 2) ---
+    ema_short: int = 50
+    ema_long: int = 200
+    rsi_period: int = 14
+    atr_period: int = 14
+    regime_trend_band: float = 0.002
+    regime_vol_low_pct: float = 0.005
+    regime_vol_high_pct: float = 0.02
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -102,6 +115,37 @@ class Settings(BaseSettings):
         for item in value:
             Timeframe(item)  # raises ValueError if not a supported timeframe
         return value
+
+    @model_validator(mode="after")
+    def _validate_indicator_params(self) -> Settings:
+        if not (0 < self.ema_short < self.ema_long):
+            raise ValueError("require 0 < ema_short < ema_long")
+        if self.rsi_period <= 0 or self.atr_period <= 0:
+            raise ValueError("rsi_period and atr_period must be > 0")
+        if self.regime_trend_band <= 0:
+            raise ValueError("regime_trend_band must be > 0")
+        if not (0 < self.regime_vol_low_pct < self.regime_vol_high_pct):
+            raise ValueError("require 0 < regime_vol_low_pct < regime_vol_high_pct")
+        return self
+
+    def indicator_config(self) -> IndicatorConfig:
+        from app.indicators.config import IndicatorConfig
+
+        return IndicatorConfig(
+            ema_short=self.ema_short,
+            ema_long=self.ema_long,
+            rsi_period=self.rsi_period,
+            atr_period=self.atr_period,
+        )
+
+    def regime_config(self) -> RegimeConfig:
+        from app.regime.config import RegimeConfig
+
+        return RegimeConfig(
+            trend_band=self.regime_trend_band,
+            vol_low_pct=self.regime_vol_low_pct,
+            vol_high_pct=self.regime_vol_high_pct,
+        )
 
     @model_validator(mode="after")
     def _enforce_phase0_safety(self) -> Settings:
