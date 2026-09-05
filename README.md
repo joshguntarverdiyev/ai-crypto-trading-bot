@@ -7,15 +7,19 @@ whether a durable net trading edge exists at all.
 
 > **No profit is claimed or guaranteed. This is not production trading software.**
 
-## Current status: Phase 4 — Strategy + Sizing
+## Current status: Phase 5 — News Intelligence + Claude Analyst
 
-Phases 0–4 are complete: the software foundation (P0), exchange-agnostic market
+Phases 0–5 are complete: the software foundation (P0), exchange-agnostic market
 data (P1), deterministic indicators + descriptive regime (P2), the trading-cost
-model + net-edge gate (P3), and now the hypothesis-first quant candidate
-generator + risk-budgeting position sizing (P4). Everything remains **offline,
-deterministic, and pre-runtime**: no exchange connection, network, news, AI
-calls, RiskManager, paper/live trading, or order execution. A P4 candidate is a
-*proposal* and a sized plan is *advisory* — neither is authorization to trade.
+model + net-edge gate (P3), the hypothesis-first candidate generator +
+risk-budgeting sizing (P4), and now the news-intelligence pipeline + a
+strictly-advisory Claude analyst veto (P5). Everything remains **offline,
+deterministic, and pre-runtime**: news fetch and the Claude call sit behind
+interfaces with offline fixtures (no network, no `anthropic` dependency, no
+credentials); there is no RiskManager, paper/live trading, or order execution.
+A P4 candidate is a *proposal*, a sized plan is *advisory*, and the analyst is
+*advisory only* (APPROVE→proceed, anything else / any failure → HOLD) — none is
+authorization to trade. The RiskManager (P6) will be the final authority.
 
 ## Source of truth
 

@@ -46,7 +46,7 @@ Phase 0 base:
 | feature_snapshots — **P2 computes features/regime on-demand (no table; deferred)** | P2 |
 | cost_calcs — **P3 computes costs on-demand (no table; deferred)** | P3 |
 | signals, strategy_versions — **P4 computes candidates/sizing on-demand (no table; deferred to P6)** | P4 |
-| news, sentiment, claude_decisions, model_versions, prompt_versions | P5 |
+| news, sentiment, claude_decisions, model_versions, prompt_versions — **P5 builds news+analyst on-demand behind offline interfaces; audit-complete objects, tables deferred to P6** | P5 |
 | risk_decisions | P6 |
 | orders, fills, fees, positions, portfolio_snapshots, pnl, exchange_account_snapshots | P6/P10/P11 |
 | backtest_runs | P7 |
@@ -64,13 +64,16 @@ keys (`clientOrderId`, Master Plan §18) get their own dedicated columns in the
 execution models when those are built (P6/P10/P11) — never conflated with
 internal IDs.
 
-## Model abstraction (AI) — reserved
+## Model abstraction (AI) — implemented as an offline interface (P5)
 
 **[ENGINEERING]** Claude model selection uses **class-based abstraction**
 (Haiku/Sonnet/Opus class) resolved from versioned configuration at runtime and
 verified at implementation time (Master Plan §0.1-2). Model IDs are never
 hardcoded in business logic; the exact `model_id` used is recorded for audit.
-Not implemented in Phase 0.
+Implemented in P5 as `app/ai/config.py` (`ModelClass` → `AIConfig.resolve_model_id`)
++ `AnalystProvider` (`app/ai/provider.py`), stamped onto every `AnalystVerdict`.
+The **real Anthropic SDK call is deferred** behind `AnalystProvider` (offline
+`FixtureAnalystProvider` in P5; no dependency, no network, no credentials).
 
 ## Tax layer — reserved
 

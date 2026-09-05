@@ -59,3 +59,32 @@ class UnsupportedMarketError(MarketDataError):
 
 class AdapterError(MarketDataError):
     """The adapter could not fetch or grossly could not parse from its source."""
+
+
+# --- Phase 5: news + AI-analyst domain errors ---
+# EXCEPTIONS for infrastructure/programming problems only. Per-item news
+# data-quality problems (missing timestamps, unknown availability, staleness,
+# ...) are NOT exceptions — they are reported via the news pipeline result
+# (see app.news.models / app.news.service). An unavailable/invalid Claude
+# response is likewise NOT an exception raised to the caller: it maps to a
+# conservative HOLD verdict (Master Plan §6 / §0.1-3).
+
+
+class NewsError(AppError):
+    """Base class for news infrastructure/programming errors."""
+
+
+class NewsSourceError(NewsError):
+    """A news source adapter could not fetch or grossly could not parse."""
+
+
+class AIError(AppError):
+    """Base class for AI-analyst infrastructure/programming errors."""
+
+
+class AIUnavailableError(AIError):
+    """The analyst provider was unavailable (never a permissive result → HOLD)."""
+
+
+class AITimeoutError(AIError):
+    """The analyst provider timed out (never a permissive result → HOLD)."""

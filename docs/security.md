@@ -21,6 +21,16 @@ safe-by-default foundation.
 * Unknown financial/system state is never treated as safe (a Master Plan
   principle enforced by later phases; documented here as a standing rule).
 
+## Claude/AI credentials (P5 interface)
+
+The P5 analyst holds **no credentials**: `AIConfig` has no key/secret/token
+field, the versioned prompt carries only market/news facts, and the
+`AnalystProvider.analyze` request is secret-free (credentials, if ever needed,
+are injected at provider *construction* by a later phase — never in the prompt
+or request). The `anthropic_api_key` placeholder stays empty; no live Claude
+call is made in P5. Claude never places orders and never overrides the
+RiskManager (P6, final authority).
+
 ## Reserved for later phases (NOT in Phase 0)
 
 Withdrawal-disabled exchange API keys, IP allow-listing, secrets manager, DB

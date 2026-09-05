@@ -1,8 +1,14 @@
-"""app.news — news collection, dedup, 5-timestamp model, sentiment.
+"""app.news — news intelligence pipeline (Phase 5).
 
-Future phase: P5. Intentionally EMPTY in Phase 0.
+Deterministic, offline, versioned. Fetches untrusted items behind a
+``NewsSourceAdapter`` interface (offline ``FixtureNewsAdapter``; real
+RSS/CryptoPanic HTTP deferred), normalizes them into the strict five-timestamp
+model (Master Plan §7), de-duplicates, and assembles an availability-gated
+``NewsContext`` for a specific ``decision_time``. Absence/unknown/staleness is
+conservative (§0.1-3), never "no negative news". No network, no credentials, no
+persistence table (audit-complete objects; tables deferred to P6).
 
-This package is a deliberate architecture boundary (Master Plan §E). It will be
-implemented in the phase noted above. In Phase 0 it contains no functionality,
-no network access, and no trading logic. See docs/architecture.md.
+Historical news availability is not fabricated — there is no historical-news
+backtest path (§8). Import concrete types from their modules
+(``app.news.service.NewsService``, etc.); this package exports no top-level symbols.
 """

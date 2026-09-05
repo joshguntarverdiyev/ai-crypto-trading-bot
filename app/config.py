@@ -12,6 +12,7 @@ validated with Pydantic v2. Safe-by-default:
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
@@ -24,8 +25,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.exceptions import ConfigError
 
 if TYPE_CHECKING:
+    from app.ai.config import AIConfig
     from app.costs.config import CostConfig, CostScenario
     from app.indicators.config import IndicatorConfig
+    from app.news.config import NewsConfig
     from app.regime.config import RegimeConfig
     from app.sizing.config import SizingConfig
     from app.strategy.config import StrategyConfig
@@ -132,6 +135,24 @@ class Settings(BaseSettings):
     sizing_tick_size: Decimal = Decimal("0.01")
     sizing_liquidity_cap_quote: Decimal = Decimal("100000")
 
+    # --- news pipeline (Phase 5) — offline; provisional, NOT calibrated ---
+    news_max_age_seconds: int = 86400  # 24h freshness window
+    news_dedup_window_seconds: int = 172800  # 48h dedup window
+    news_require_known_availability: bool = True  # fail-safe: exclude unknown (§7)
+    news_known_assets: list[str] = ["BTC", "ETH"]
+
+    # --- AI analyst (Phase 5) — class-based model abstraction (§0.1-2) ---
+    # Model IDs are config-driven (never hardcoded in logic); re-verified when the
+    # real provider is wired. The anthropic_api_key placeholder stays empty (no
+    # credential; no live call in Phase 5).
+    ai_analyst_enabled: bool = True
+    ai_analyst_model_class: str = "sonnet"
+    ai_haiku_model_id: str = "claude-haiku-4-5-20251001"
+    ai_sonnet_model_id: str = "claude-sonnet-4-6"
+    ai_opus_model_id: str = "claude-opus-4-8"
+    ai_timeout_seconds: float = 20.0
+    ai_uncertain_policy: str = "hold"
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -199,6 +220,25 @@ class Settings(BaseSettings):
         self.sizing_config()
         return self
 
+    @model_validator(mode="after")
+    def _validate_news_params(self) -> Settings:
+        # NewsConfig.__post_init__ is the source-of-truth for invariants.
+        self.news_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_ai_params(self) -> Settings:
+        from app.ai.config import ModelClass
+
+        # AIConfig.__post_init__ is the source-of-truth for invariants.
+        self.ai_config()
+        if self.ai_analyst_model_class not in {m.value for m in ModelClass}:
+            raise ValueError(
+                f"ai_analyst_model_class must be one of {[m.value for m in ModelClass]}, "
+                f"got {self.ai_analyst_model_class!r}"
+            )
+        return self
+
     def indicator_config(self) -> IndicatorConfig:
         from app.indicators.config import IndicatorConfig
 
@@ -241,6 +281,29 @@ class Settings(BaseSettings):
         from app.costs.config import CostScenario
 
         return CostScenario(self.cost_scenario)
+
+    def news_config(self) -> NewsConfig:
+        from app.news.config import NewsConfig
+
+        return NewsConfig(
+            max_news_age=timedelta(seconds=self.news_max_age_seconds),
+            dedup_window=timedelta(seconds=self.news_dedup_window_seconds),
+            require_known_availability=self.news_require_known_availability,
+            known_assets=tuple(self.news_known_assets),
+        )
+
+    def ai_config(self) -> AIConfig:
+        from app.ai.config import AIConfig, ModelClass
+
+        return AIConfig(
+            analyst_model_class=ModelClass(self.ai_analyst_model_class),
+            haiku_model_id=self.ai_haiku_model_id,
+            sonnet_model_id=self.ai_sonnet_model_id,
+            opus_model_id=self.ai_opus_model_id,
+            analyst_enabled=self.ai_analyst_enabled,
+            timeout_seconds=self.ai_timeout_seconds,
+            uncertain_policy=self.ai_uncertain_policy,
+        )
 
     def strategy_config(self) -> StrategyConfig:
         from app.strategy.config import StrategyConfig

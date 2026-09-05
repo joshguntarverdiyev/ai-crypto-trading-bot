@@ -58,10 +58,27 @@ CORE_MODULES = [
     "app.sizing.config",
     "app.sizing.models",
     "app.sizing.sizer",
+    # Phase 5 — news + AI analyst (implemented, offline)
+    "app.news",
+    "app.news.config",
+    "app.news.models",
+    "app.news.adapter",
+    "app.news.fixture_adapter",
+    "app.news.normalization",
+    "app.news.dedup",
+    "app.news.service",
+    "app.ai",
+    "app.ai.config",
+    "app.ai.models",
+    "app.ai.provider",
+    "app.ai.fixture_provider",
+    "app.ai.schema",
+    "app.ai.prompts",
+    "app.ai.analyst",
 ]
 
 FUTURE_PACKAGES = [
-    "app.news", "app.ai", "app.risk",
+    "app.risk",
     "app.execution", "app.tax", "app.portfolio", "app.engine",
     "app.notifications", "backtesting", "dashboard",
 ]

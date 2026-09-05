@@ -21,20 +21,23 @@ authoritative.
 
 ## Current phase
 
-**Phase 4 — Strategy + Sizing (COMPLETE).** Phase 0/1/2/3 + the hypothesis-first
-quant candidate generator (`app/strategy/`) and risk-budgeting position sizing
-(`app/sizing/`): long-only baseline (own EMA50/EMA200 up-trend + causal 4h
-confirmation + RSI pullback → ATR-based stop/target) with the **reward:risk gate**
-and the **P3 cost gate**; `PositionSizer` computes an advisory size from
-stop-distance + risk budget + exchange min/max/step/tick + conservative liquidity
-cap + structural portfolio caps (single-asset/total/simultaneous/correlated
-BTC/ETH) over caller-supplied exposures. Deterministic, offline, exchange-agnostic,
-versioned, compute-on-demand (no `signals`/`strategy_versions` table); no new deps.
-The ATR target is a provisional model assumption, **not a prediction** (not
-calibrated — P7). A candidate/sized plan is **advisory only — never authorization
-to trade** and never overrides the future P6 RiskManager.
+**Phase 5 — News Intelligence + Claude Analyst (COMPLETE).** Phase 0–4 + the
+news pipeline (`app/news/`) and the strictly-advisory Claude analyst veto
+(`app/ai/`). News: untrusted items behind a `NewsSourceAdapter` (offline
+`FixtureNewsAdapter`) → strict five-timestamp model (§7) → dedup →
+availability-gated `NewsContext` (causal `available_at <= decision_time`; unknown
+availability excluded; absence is conservative UNAVAILABLE, never "no negative
+news"). Analyst: class-based model resolution (`ModelClass` → exact runtime
+`model_id` from versioned config, recorded for audit) behind an `AnalystProvider`
+(offline `FixtureAnalystProvider`); structured `APPROVE|VETO|UNCERTAIN` →
+`PROCEED` only on a clean APPROVE, every failure (invalid schema / unavailable /
+timeout / news-unavailable) → HOLD. Deterministic, offline, versioned,
+compute-on-demand (audit-complete objects; no tables). No network, no `anthropic`
+dependency, no credentials. Claude is **advisory only** — no orders, no
+risk-limit changes; the RiskManager (P6) is the final authority. No
+historical-news backtest (§8).
 
-## Allowed scope (Phase 0–4)
+## Allowed scope (Phase 0–5)
 
 Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
 tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
@@ -44,22 +47,28 @@ tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
 deterministic per-trade cost model + net-edge gate (`app/costs/`) **+ (P4)**
 hypothesis-first long-only candidate generation (`app/strategy/`) — incl. the
 `reward:risk` gate — and advisory risk-budgeting position sizing with structural
-portfolio caps (`app/sizing/`), computed on-demand from features/config.
+portfolio caps (`app/sizing/`) **+ (P5)** the offline news pipeline (`app/news/`)
+and the strictly-advisory Claude analyst (`app/ai/`) behind source/provider
+interfaces — class-based model abstraction, structured verdict + strict schema,
+every failure→HOLD — all computed on-demand from injected inputs.
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
-Real exchange API / CCXT / network fetch / WebSocket / live market data · order
-book · **additional indicators (MACD/Bollinger/volume-MA)** ·
-**feature/cost/signal persistence table** · **strategy/cost calibration or any
-edge/performance claim** · **RiskManager (final authority) / kill-switch /
-realized-loss & drawdown tracking / runtime portfolio state** · backtesting ·
-paper / shadow / live trading · order execution · `clientOrderId` /
-reconciliation · stop-loss execution · news / RSS / sentiment · Anthropic/Claude
-API calls · Telegram bot · FastAPI/dashboard · tax calculation · exchange
-selection · API keys / secrets · real-money trading · simulated fills. Regime is
-**descriptive only — never a trading signal.** A P4 candidate/sized plan is
-**advisory only — never authorization to trade.** Do not create fake
-implementations. Remaining future-phase packages must stay inert.
+**Real news/HTTP fetch (RSS/CryptoPanic) · the `anthropic` SDK / live Claude API
+calls · API keys / secrets** · real exchange API / CCXT / network fetch /
+WebSocket / live market data · order book · **additional indicators
+(MACD/Bollinger/volume-MA)** · **persistence tables (news/claude_decisions/
+model_versions/prompt_versions/signals/cost/feature) + repositories** ·
+**strategy/cost calibration or any edge/performance claim** · **RiskManager
+(final authority) / kill-switch / realized-loss & drawdown tracking / runtime
+portfolio state / pipeline orchestration** · backtesting · paper / shadow / live
+trading · order execution · `clientOrderId` / reconciliation · stop-loss
+execution · Telegram bot · FastAPI/dashboard · tax calculation · exchange
+selection · real-money trading · simulated fills · **any fake historical-news
+backtest (§8)**. Regime is **descriptive only — never a trading signal.** A
+candidate/sized plan is **advisory only**, and the Claude analyst is **advisory
+only — never authorization to trade** and never overrides the RiskManager. Do not
+create fake implementations. Remaining future-phase packages must stay inert.
 
 ## Non-negotiable rules
 
