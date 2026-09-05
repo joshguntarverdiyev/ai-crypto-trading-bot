@@ -1,8 +1,9 @@
-"""app.portfolio — portfolio state and correlation-adjusted exposure.
+"""app.portfolio — authoritative paper portfolio/account state (Phase 6).
 
-Future phase: P4/P6. Intentionally EMPTY in Phase 0.
-
-This package is a deliberate architecture boundary (Master Plan §E). It will be
-implemented in the phase noted above. In Phase 0 it contains no functionality,
-no network access, and no trading logic. See docs/architecture.md.
+The DB is the source of truth; the in-memory ``AccountState`` is rebuilt from
+persisted positions + the latest snapshot on restart (H11). A pure ledger books
+cash/PnL/fees with no double-counting (H12); positions are self-contained
+(incl. stop/target, H10). Exposure reuses correlation grouping. No live-exchange
+account state (deferred). Import concrete types from their modules
+(``app.portfolio.store.PortfolioStore``, ``app.portfolio.ledger``, etc.).
 """

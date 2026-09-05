@@ -27,9 +27,11 @@ from app.exceptions import ConfigError
 if TYPE_CHECKING:
     from app.ai.config import AIConfig
     from app.costs.config import CostConfig, CostScenario
+    from app.execution.config import PaperConfig
     from app.indicators.config import IndicatorConfig
     from app.news.config import NewsConfig
     from app.regime.config import RegimeConfig
+    from app.risk.config import RiskConfig
     from app.sizing.config import SizingConfig
     from app.strategy.config import StrategyConfig
 
@@ -153,6 +155,24 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = 20.0
     ai_uncertain_policy: str = "hold"
 
+    # --- risk manager (Phase 6) — final authority; provisional, NOT calibrated ---
+    risk_max_risk_per_trade_pct: float = 0.01
+    risk_max_single_asset_exposure_pct: float = 0.20
+    risk_max_total_exposure_pct: float = 0.30
+    risk_max_simultaneous_positions: int = 2
+    risk_correlated_exposure_cap_pct: float = 0.30
+    risk_max_daily_loss_pct: float = 0.03
+    risk_max_weekly_loss_pct: float = 0.06
+    risk_max_drawdown_pct: float = 0.15
+    risk_vol_shock_atr_pct: float = 0.10
+    risk_abnormal_spread_pct: float = 0.01
+    risk_abnormal_slippage_pct: float = 0.01
+    risk_max_staleness_intervals: int = 1
+
+    # --- paper engine (Phase 6) — simulation only; LIVE_TRADING stays false ---
+    paper_liquidity_fill_cap: Decimal = Decimal("100000")  # simulation assumption (H7)
+    paper_starting_equity: Decimal = Decimal("10000")
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -239,6 +259,18 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_risk_params(self) -> Settings:
+        # RiskConfig.__post_init__ is the source-of-truth for invariants.
+        self.risk_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_paper_params(self) -> Settings:
+        # PaperConfig.__post_init__ is the source-of-truth for invariants.
+        self.paper_config()
+        return self
+
     def indicator_config(self) -> IndicatorConfig:
         from app.indicators.config import IndicatorConfig
 
@@ -303,6 +335,36 @@ class Settings(BaseSettings):
             analyst_enabled=self.ai_analyst_enabled,
             timeout_seconds=self.ai_timeout_seconds,
             uncertain_policy=self.ai_uncertain_policy,
+        )
+
+    def risk_config(self) -> RiskConfig:
+        from app.risk.config import RiskConfig
+
+        return RiskConfig(
+            max_risk_per_trade_pct=self.risk_max_risk_per_trade_pct,
+            max_single_asset_exposure_pct=self.risk_max_single_asset_exposure_pct,
+            max_total_exposure_pct=self.risk_max_total_exposure_pct,
+            max_simultaneous_positions=self.risk_max_simultaneous_positions,
+            correlated_exposure_cap_pct=self.risk_correlated_exposure_cap_pct,
+            max_daily_loss_pct=self.risk_max_daily_loss_pct,
+            max_weekly_loss_pct=self.risk_max_weekly_loss_pct,
+            max_drawdown_pct=self.risk_max_drawdown_pct,
+            vol_shock_atr_pct=self.risk_vol_shock_atr_pct,
+            abnormal_spread_pct=self.risk_abnormal_spread_pct,
+            abnormal_slippage_pct=self.risk_abnormal_slippage_pct,
+            max_staleness_intervals=self.risk_max_staleness_intervals,
+        )
+
+    def paper_config(self) -> PaperConfig:
+        from app.execution.config import PaperConfig
+
+        return PaperConfig(
+            taker_fee_pct=self.cost_taker_fee_pct,
+            tick_size=self.sizing_tick_size,
+            step_size=self.sizing_step_size,
+            min_notional=self.sizing_min_notional,
+            liquidity_fill_cap=self.paper_liquidity_fill_cap,
+            starting_equity=self.paper_starting_equity,
         )
 
     def strategy_config(self) -> StrategyConfig:

@@ -31,6 +31,16 @@ or request). The `anthropic_api_key` placeholder stays empty; no live Claude
 call is made in P5. Claude never places orders and never overrides the
 RiskManager (P6, final authority).
 
+## Paper engine (P6) — no live path
+
+The P6 RiskManager, paper execution engine, and tick orchestrator are
+**simulated and offline only**. `LIVE_TRADING` stays false (fail-closed); there
+is no real exchange, CCXT, network, credential, withdrawal, or order-placement
+path, and no Telegram/dashboard trading. The RiskManager is the deterministic
+final authority and Claude cannot override it. Paper performance is never claimed
+to equal live. Real-exchange execution/reconciliation and credentials remain
+deferred to the live-readiness phases.
+
 ## Reserved for later phases (NOT in Phase 0)
 
 Withdrawal-disabled exchange API keys, IP allow-listing, secrets manager, DB

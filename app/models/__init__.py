@@ -16,7 +16,12 @@ from __future__ import annotations
 from app.models.base import Base, TimestampMixin, UUIDMixin, VersionMixin
 from app.models.candle import CandleRecord
 from app.models.config_version import ConfigVersion
+from app.models.decisions import ClaudeDecisionRecord, RiskDecisionRecord
 from app.models.error_record import ErrorRecord
+from app.models.kill_switch import KILL_SWITCH_ROW_ID, KillSwitchRecord
+from app.models.news_record import NewsRecord
+from app.models.paper import PaperFillRecord, PaperOrderRecord
+from app.models.portfolio import PortfolioSnapshotRecord, PositionRecord
 from app.models.system_event import SystemEvent
 
 __all__ = [
@@ -28,4 +33,14 @@ __all__ = [
     "ErrorRecord",
     "ConfigVersion",
     "CandleRecord",
+    # Phase 6 — persistence
+    "NewsRecord",
+    "ClaudeDecisionRecord",
+    "RiskDecisionRecord",
+    "PaperOrderRecord",
+    "PaperFillRecord",
+    "PositionRecord",
+    "PortfolioSnapshotRecord",
+    "KillSwitchRecord",
+    "KILL_SWITCH_ROW_ID",
 ]

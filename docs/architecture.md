@@ -46,9 +46,9 @@ Phase 0 base:
 | feature_snapshots — **P2 computes features/regime on-demand (no table; deferred)** | P2 |
 | cost_calcs — **P3 computes costs on-demand (no table; deferred)** | P3 |
 | signals, strategy_versions — **P4 computes candidates/sizing on-demand (no table; deferred to P6)** | P4 |
-| news, sentiment, claude_decisions, model_versions, prompt_versions — **P5 builds news+analyst on-demand behind offline interfaces; audit-complete objects, tables deferred to P6** | P5 |
-| risk_decisions | P6 |
-| orders, fills, fees, positions, portfolio_snapshots, pnl, exchange_account_snapshots | P6/P10/P11 |
+| news, claude_decisions — **IMPLEMENTED (P6)**; model_versions/prompt_versions denormalized onto claude_decisions; sentiment deferred | P5/P6 |
+| risk_decisions — **IMPLEMENTED (P6)** | P6 |
+| paper_orders, paper_fills, positions, portfolio_snapshots, kill_switch_state — **IMPLEMENTED (P6, paper)**; orders/fills/fees to a real venue + exchange_account_snapshots deferred | P6/P10/P11 |
 | backtest_runs | P7 |
 | paper_trading_runs | P8/P9 |
 

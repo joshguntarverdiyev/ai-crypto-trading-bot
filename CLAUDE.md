@@ -21,23 +21,24 @@ authoritative.
 
 ## Current phase
 
-**Phase 5 — News Intelligence + Claude Analyst (COMPLETE).** Phase 0–4 + the
-news pipeline (`app/news/`) and the strictly-advisory Claude analyst veto
-(`app/ai/`). News: untrusted items behind a `NewsSourceAdapter` (offline
-`FixtureNewsAdapter`) → strict five-timestamp model (§7) → dedup →
-availability-gated `NewsContext` (causal `available_at <= decision_time`; unknown
-availability excluded; absence is conservative UNAVAILABLE, never "no negative
-news"). Analyst: class-based model resolution (`ModelClass` → exact runtime
-`model_id` from versioned config, recorded for audit) behind an `AnalystProvider`
-(offline `FixtureAnalystProvider`); structured `APPROVE|VETO|UNCERTAIN` →
-`PROCEED` only on a clean APPROVE, every failure (invalid schema / unavailable /
-timeout / news-unavailable) → HOLD. Deterministic, offline, versioned,
-compute-on-demand (audit-complete objects; no tables). No network, no `anthropic`
-dependency, no credentials. Claude is **advisory only** — no orders, no
-risk-limit changes; the RiskManager (P6) is the final authority. No
-historical-news backtest (§8).
+**Phase 6 — Risk + Paper Engine (COMPLETE).** Phase 0–5 + the deterministic
+**RiskManager (FINAL AUTHORITY)** (`app/risk/`), a **paper (simulated) execution
+engine** (`app/execution/`), authoritative portfolio/account state
+(`app/portfolio/`), the tick orchestrator (`app/engine/`), and the first
+**persistence** layer (`app/models/` news/claude_decisions/risk_decisions/
+paper_orders/paper_fills/positions/portfolio_snapshots/kill_switch_state). The
+RiskManager is the sole gate to (paper) execution: rule-based, fail-closed,
+independently recomputing risk/exposure from authoritative state (never trusting
+P4's advisory numbers) and adding runtime controls (daily/weekly loss, drawdown
+via persisted HWM, volatility shock, abnormal spread/slippage). Paper fills are
+deterministic (reference + adverse spread + slippage only; fees separate; no P3
+gate buffers); bot-managed stop/target exits (stop-first when both touch, no
+exchange-native stops); `intent_id` idempotency + reconcile-before-retry; atomic
+per-tick persistence with an independent-session kill-switch HALT. `LIVE_TRADING`
+stays false; offline/simulated only; **paper ≠ live performance**. Claude remains
+advisory and can never override the RiskManager.
 
-## Allowed scope (Phase 0–5)
+## Allowed scope (Phase 0–6)
 
 Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
 tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
@@ -50,25 +51,33 @@ hypothesis-first long-only candidate generation (`app/strategy/`) — incl. the
 portfolio caps (`app/sizing/`) **+ (P5)** the offline news pipeline (`app/news/`)
 and the strictly-advisory Claude analyst (`app/ai/`) behind source/provider
 interfaces — class-based model abstraction, structured verdict + strict schema,
-every failure→HOLD — all computed on-demand from injected inputs.
+every failure→HOLD — all computed on-demand from injected inputs **+ (P6)** the
+deterministic RiskManager (final authority) + kill switch (`app/risk/`), the
+paper (simulated) execution engine + bot-managed stops (`app/execution/`),
+authoritative portfolio/account state + accounting ledger (`app/portfolio/`),
+the fail-closed tick orchestrator (`app/engine/`), and the focused persistence
+layer (news/claude_decisions/risk_decisions/paper_orders/paper_fills/positions/
+portfolio_snapshots/kill_switch_state) — all offline, deterministic, simulated,
+with `LIVE_TRADING` fail-closed to false.
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
 **Real news/HTTP fetch (RSS/CryptoPanic) · the `anthropic` SDK / live Claude API
-calls · API keys / secrets** · real exchange API / CCXT / network fetch /
-WebSocket / live market data · order book · **additional indicators
-(MACD/Bollinger/volume-MA)** · **persistence tables (news/claude_decisions/
-model_versions/prompt_versions/signals/cost/feature) + repositories** ·
-**strategy/cost calibration or any edge/performance claim** · **RiskManager
-(final authority) / kill-switch / realized-loss & drawdown tracking / runtime
-portfolio state / pipeline orchestration** · backtesting · paper / shadow / live
-trading · order execution · `clientOrderId` / reconciliation · stop-loss
-execution · Telegram bot · FastAPI/dashboard · tax calculation · exchange
-selection · real-money trading · simulated fills · **any fake historical-news
-backtest (§8)**. Regime is **descriptive only — never a trading signal.** A
-candidate/sized plan is **advisory only**, and the Claude analyst is **advisory
-only — never authorization to trade** and never overrides the RiskManager. Do not
-create fake implementations. Remaining future-phase packages must stay inert.
+calls · API keys / secrets** · **real exchange API / CCXT / live execution /
+network fetch / WebSocket / live market data** · order book · **additional
+indicators (MACD/Bollinger/volume-MA)** · **strategy/cost/risk calibration or any
+edge/performance claim** · **live trading (`LIVE_TRADING` stays false) /
+real-money trading / real order execution / real-exchange reconciliation /
+`clientOrderId` to a venue / exchange-native stops** · leverage / futures /
+margin / shorting · HFT / scalping · backtesting · shadow-mode runtime · Telegram
+bot / Telegram trading · FastAPI/dashboard / dashboard trading · tax calculation
+· exchange selection · NTP/clock-drift · PostgreSQL migration · **any fake
+historical-news backtest (§8)**. Regime is **descriptive only — never a trading
+signal.** A candidate/sized plan is **advisory only**, and the Claude analyst is
+**advisory only — never authorization to trade** and never overrides the
+RiskManager (the deterministic final authority). Paper performance is never
+claimed to equal live. Do not create fake implementations. Remaining future-phase
+packages must stay inert.
 
 ## Non-negotiable rules
 

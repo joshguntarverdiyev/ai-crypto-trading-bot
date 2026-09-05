@@ -7,19 +7,18 @@ whether a durable net trading edge exists at all.
 
 > **No profit is claimed or guaranteed. This is not production trading software.**
 
-## Current status: Phase 5 — News Intelligence + Claude Analyst
+## Current status: Phase 6 — Risk + Paper Engine
 
-Phases 0–5 are complete: the software foundation (P0), exchange-agnostic market
-data (P1), deterministic indicators + descriptive regime (P2), the trading-cost
-model + net-edge gate (P3), the hypothesis-first candidate generator +
-risk-budgeting sizing (P4), and now the news-intelligence pipeline + a
-strictly-advisory Claude analyst veto (P5). Everything remains **offline,
-deterministic, and pre-runtime**: news fetch and the Claude call sit behind
-interfaces with offline fixtures (no network, no `anthropic` dependency, no
-credentials); there is no RiskManager, paper/live trading, or order execution.
-A P4 candidate is a *proposal*, a sized plan is *advisory*, and the analyst is
-*advisory only* (APPROVE→proceed, anything else / any failure → HOLD) — none is
-authorization to trade. The RiskManager (P6) will be the final authority.
+Phases 0–6 are complete: the software foundation (P0), market data (P1),
+indicators + regime (P2), the cost gate (P3), the candidate generator +
+advisory sizing (P4), the advisory news + Claude analyst (P5), and now the
+deterministic **RiskManager (final authority)**, a **paper (simulated) execution
+engine**, authoritative portfolio/account state, a kill switch, and the first
+**persistence** layer — wired into a fail-closed P4→P5→P6 tick. Everything
+remains **offline and simulated**: `LIVE_TRADING` stays false; there is no real
+exchange, network, credentials, or live execution, and **paper performance is
+never claimed to equal live**. Claude is advisory only and can never override the
+RiskManager, which is the sole gate to (paper) execution.
 
 ## Source of truth
 

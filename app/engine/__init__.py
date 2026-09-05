@@ -1,8 +1,9 @@
-"""app.engine — trading loop orchestration (separate long-running process).
+"""app.engine — deterministic P4→P5→P6 tick orchestration (Phase 6).
 
-Future phase: P6. Intentionally EMPTY in Phase 0.
-
-This package is a deliberate architecture boundary (Master Plan §E). It will be
-implemented in the phase noted above. In Phase 0 it contains no functionality,
-no network access, and no trading logic. See docs/architecture.md.
+``TradingEngine.process_tick(decision_time, now, symbol)`` runs the full pipeline
+once, fail-closed at every stage, with the RiskManager as the sole gate to paper
+execution. Time is injected (no uncontrolled wall-clock in business logic). A
+per-tick recorder persists all audit + trade rows in one atomic transaction (H9).
+No long-running daemon and no live path (deferred). Import concrete types from
+their modules (``app.engine.pipeline.TradingEngine``, etc.).
 """

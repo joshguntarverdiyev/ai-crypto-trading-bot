@@ -75,11 +75,35 @@ CORE_MODULES = [
     "app.ai.schema",
     "app.ai.prompts",
     "app.ai.analyst",
+    # Phase 6 — risk + paper engine (implemented, offline)
+    "app.risk",
+    "app.risk.config",
+    "app.risk.models",
+    "app.risk.manager",
+    "app.risk.kill_switch",
+    "app.execution",
+    "app.execution.config",
+    "app.execution.models",
+    "app.execution.paper_broker",
+    "app.execution.stops",
+    "app.execution.repository",
+    "app.portfolio",
+    "app.portfolio.models",
+    "app.portfolio.ledger",
+    "app.portfolio.store",
+    "app.engine",
+    "app.engine.pipeline",
+    "app.engine.recorder",
+    # Phase 6 — new persistence models
+    "app.models.news_record",
+    "app.models.decisions",
+    "app.models.paper",
+    "app.models.portfolio",
+    "app.models.kill_switch",
 ]
 
 FUTURE_PACKAGES = [
-    "app.risk",
-    "app.execution", "app.tax", "app.portfolio", "app.engine",
+    "app.tax",
     "app.notifications", "backtesting", "dashboard",
 ]
 
