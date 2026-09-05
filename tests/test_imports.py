@@ -41,11 +41,19 @@ CORE_MODULES = [
     "app.regime.models",
     "app.regime.alignment",
     "app.regime.classifier",
+    # Phase 3 — cost system (implemented)
+    "app.costs",
+    "app.costs.config",
+    "app.costs.models",
+    "app.costs.fees",
+    "app.costs.spread",
+    "app.costs.slippage",
+    "app.costs.manager",
 ]
 
 FUTURE_PACKAGES = [
     "app.strategy",
-    "app.costs", "app.news", "app.ai", "app.risk", "app.sizing",
+    "app.news", "app.ai", "app.risk", "app.sizing",
     "app.execution", "app.tax", "app.portfolio", "app.engine",
     "app.notifications", "backtesting", "dashboard",
 ]

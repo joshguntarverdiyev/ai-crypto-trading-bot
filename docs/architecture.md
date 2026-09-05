@@ -44,7 +44,7 @@ Phase 0 base:
 |---|---|
 | **candles — IMPLEMENTED (P1)**; market_data_snapshots deferred | P1 |
 | feature_snapshots — **P2 computes features/regime on-demand (no table; deferred)** | P2 |
-| cost_calcs | P3 |
+| cost_calcs — **P3 computes costs on-demand (no table; deferred)** | P3 |
 | signals, strategy_versions | P4 |
 | news, sentiment, claude_decisions, model_versions, prompt_versions | P5 |
 | risk_decisions | P6 |

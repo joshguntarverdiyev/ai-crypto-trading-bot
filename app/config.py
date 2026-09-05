@@ -23,6 +23,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.exceptions import ConfigError
 
 if TYPE_CHECKING:
+    from app.costs.config import CostConfig, CostScenario
     from app.indicators.config import IndicatorConfig
     from app.regime.config import RegimeConfig
 
@@ -88,6 +89,24 @@ class Settings(BaseSettings):
     regime_vol_low_pct: float = 0.005
     regime_vol_high_pct: float = 0.02
 
+    # --- cost model (Phase 3) — ILLUSTRATIVE, provisional, exchange-agnostic ---
+    # Decimal-ratio percentages (0.001 = 0.1%). NOT a real/committed exchange
+    # fee and NOT calibrated (calibration is P7). See app/costs/config.py.
+    cost_taker_fee_pct: float = 0.001
+    cost_maker_fee_pct: float = 0.0008
+    cost_spread_fallback_pct: float = 0.0005
+    cost_slippage_base_pct: float = 0.0005
+    cost_slippage_opt_mult: float = 0.5
+    cost_slippage_base_mult: float = 1.0
+    cost_slippage_cons_mult: float = 2.0
+    cost_atr_vol_coefficient: float = 0.1
+    cost_atr_vol_cap_pct: float = 0.01
+    cost_liquidity_buffer_pct: float = 0.0005
+    cost_execution_uncertainty_pct: float = 0.0005
+    cost_model_uncertainty_pct: float = 0.0005
+    cost_safety_margin_pct: float = 0.0005
+    cost_scenario: str = "conservative"
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -128,6 +147,20 @@ class Settings(BaseSettings):
             raise ValueError("require 0 < regime_vol_low_pct < regime_vol_high_pct")
         return self
 
+    @model_validator(mode="after")
+    def _validate_cost_params(self) -> Settings:
+        from app.costs.config import CostScenario
+
+        # CostConfig.__post_init__ is the source-of-truth for invariants; building
+        # it here surfaces any violation as a fail-closed ConfigError at load time.
+        self.cost_config()
+        if self.cost_scenario not in {s.value for s in CostScenario}:
+            raise ValueError(
+                f"cost_scenario must be one of {[s.value for s in CostScenario]}, "
+                f"got {self.cost_scenario!r}"
+            )
+        return self
+
     def indicator_config(self) -> IndicatorConfig:
         from app.indicators.config import IndicatorConfig
 
@@ -146,6 +179,30 @@ class Settings(BaseSettings):
             vol_low_pct=self.regime_vol_low_pct,
             vol_high_pct=self.regime_vol_high_pct,
         )
+
+    def cost_config(self) -> CostConfig:
+        from app.costs.config import CostConfig
+
+        return CostConfig(
+            taker_fee_pct=self.cost_taker_fee_pct,
+            maker_fee_pct=self.cost_maker_fee_pct,
+            spread_fallback_pct=self.cost_spread_fallback_pct,
+            slippage_base_pct=self.cost_slippage_base_pct,
+            slippage_opt_mult=self.cost_slippage_opt_mult,
+            slippage_base_mult=self.cost_slippage_base_mult,
+            slippage_cons_mult=self.cost_slippage_cons_mult,
+            atr_vol_coefficient=self.cost_atr_vol_coefficient,
+            atr_vol_cap_pct=self.cost_atr_vol_cap_pct,
+            liquidity_buffer_pct=self.cost_liquidity_buffer_pct,
+            execution_uncertainty_pct=self.cost_execution_uncertainty_pct,
+            model_uncertainty_pct=self.cost_model_uncertainty_pct,
+            safety_margin_pct=self.cost_safety_margin_pct,
+        )
+
+    def default_cost_scenario(self) -> CostScenario:
+        from app.costs.config import CostScenario
+
+        return CostScenario(self.cost_scenario)
 
     @model_validator(mode="after")
     def _enforce_phase0_safety(self) -> Settings:

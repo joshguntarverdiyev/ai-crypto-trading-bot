@@ -21,25 +21,32 @@ authoritative.
 
 ## Current phase
 
-**Phase 2 — Indicators + Regime (COMPLETE).** Phase 0/1 + the indicator/feature
-and market-regime foundation (`app/indicators/`, `app/regime/`): deterministic
-pure-Python EMA50/EMA200/RSI14/ATR14+ATR%, `FeatureBuilder`, descriptive
-`RegimeClassifier` (1h primary, causal 4h confirmation with source+symbol
-isolation). Compute-on-demand; no feature-persistence table; no new deps.
+**Phase 3 — Cost System (COMPLETE).** Phase 0/1/2 + the trading-cost model and
+net-edge gate (`app/costs/`): deterministic fee/spread/slippage + buffers +
+safety margin + ATR_pct volatility + conservative liquidity → `min_net_edge_pct`;
+`CostManager.assess_edge` runs the strict `expected_gross_move_pct −
+min_net_edge_pct > 0` gate (PASS/HOLD) with Optimistic/Base/Conservative
+scenarios (gate defaults to Conservative). Fail-safe throughout; tax excluded;
+exchange-agnostic illustrative config; compute-on-demand (no `cost_calcs` table);
+no new deps.
 
-## Allowed scope (Phase 0–2)
+## Allowed scope (Phase 0–3)
 
 Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
 tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
 `Candle`/`Ticker`, validation gate, repository/service, offline
 `FixtureExchangeAdapter`) **+ (P2)** deterministic indicators/features and
-**descriptive** regime classification computed from Phase 1 candles.
+**descriptive** regime classification computed from Phase 1 candles **+ (P3)**
+deterministic per-trade cost model + net-edge gate (`app/costs/`), computed
+on-demand from features/config — **cost side only** (the `reward:risk` half of
+Master Plan §4 stays deferred to P4).
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
 Real exchange API / CCXT / network fetch / WebSocket / live market data · order
-book · **additional indicators (MACD/Bollinger/volume-MA)** · **feature
-persistence table** · strategy / entry-exit / candidate signals · cost engine ·
+book · **additional indicators (MACD/Bollinger/volume-MA)** · **feature/cost
+persistence table** · **`reward:risk` gate / cost calibration** · strategy /
+entry-exit / candidate signals ·
 backtesting · paper / shadow / live trading · order execution · `clientOrderId`
 / reconciliation · stop-loss execution · position sizing / risk engine ·
 kill-switch runtime behavior · news / RSS / sentiment · Anthropic/Claude API
