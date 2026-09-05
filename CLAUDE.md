@@ -21,38 +21,44 @@ authoritative.
 
 ## Current phase
 
-**Phase 3 — Cost System (COMPLETE).** Phase 0/1/2 + the trading-cost model and
-net-edge gate (`app/costs/`): deterministic fee/spread/slippage + buffers +
-safety margin + ATR_pct volatility + conservative liquidity → `min_net_edge_pct`;
-`CostManager.assess_edge` runs the strict `expected_gross_move_pct −
-min_net_edge_pct > 0` gate (PASS/HOLD) with Optimistic/Base/Conservative
-scenarios (gate defaults to Conservative). Fail-safe throughout; tax excluded;
-exchange-agnostic illustrative config; compute-on-demand (no `cost_calcs` table);
-no new deps.
+**Phase 4 — Strategy + Sizing (COMPLETE).** Phase 0/1/2/3 + the hypothesis-first
+quant candidate generator (`app/strategy/`) and risk-budgeting position sizing
+(`app/sizing/`): long-only baseline (own EMA50/EMA200 up-trend + causal 4h
+confirmation + RSI pullback → ATR-based stop/target) with the **reward:risk gate**
+and the **P3 cost gate**; `PositionSizer` computes an advisory size from
+stop-distance + risk budget + exchange min/max/step/tick + conservative liquidity
+cap + structural portfolio caps (single-asset/total/simultaneous/correlated
+BTC/ETH) over caller-supplied exposures. Deterministic, offline, exchange-agnostic,
+versioned, compute-on-demand (no `signals`/`strategy_versions` table); no new deps.
+The ATR target is a provisional model assumption, **not a prediction** (not
+calibrated — P7). A candidate/sized plan is **advisory only — never authorization
+to trade** and never overrides the future P6 RiskManager.
 
-## Allowed scope (Phase 0–3)
+## Allowed scope (Phase 0–4)
 
 Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
 tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
 `Candle`/`Ticker`, validation gate, repository/service, offline
 `FixtureExchangeAdapter`) **+ (P2)** deterministic indicators/features and
 **descriptive** regime classification computed from Phase 1 candles **+ (P3)**
-deterministic per-trade cost model + net-edge gate (`app/costs/`), computed
-on-demand from features/config — **cost side only** (the `reward:risk` half of
-Master Plan §4 stays deferred to P4).
+deterministic per-trade cost model + net-edge gate (`app/costs/`) **+ (P4)**
+hypothesis-first long-only candidate generation (`app/strategy/`) — incl. the
+`reward:risk` gate — and advisory risk-budgeting position sizing with structural
+portfolio caps (`app/sizing/`), computed on-demand from features/config.
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
 Real exchange API / CCXT / network fetch / WebSocket / live market data · order
-book · **additional indicators (MACD/Bollinger/volume-MA)** · **feature/cost
-persistence table** · **`reward:risk` gate / cost calibration** · strategy /
-entry-exit / candidate signals ·
-backtesting · paper / shadow / live trading · order execution · `clientOrderId`
-/ reconciliation · stop-loss execution · position sizing / risk engine ·
-kill-switch runtime behavior · news / RSS / sentiment · Anthropic/Claude API
-calls · Telegram bot · FastAPI/dashboard · tax calculation · exchange selection ·
-API keys / secrets · real-money trading · simulated fills. Regime is
-**descriptive only — never a trading signal.** Do not create fake
+book · **additional indicators (MACD/Bollinger/volume-MA)** ·
+**feature/cost/signal persistence table** · **strategy/cost calibration or any
+edge/performance claim** · **RiskManager (final authority) / kill-switch /
+realized-loss & drawdown tracking / runtime portfolio state** · backtesting ·
+paper / shadow / live trading · order execution · `clientOrderId` /
+reconciliation · stop-loss execution · news / RSS / sentiment · Anthropic/Claude
+API calls · Telegram bot · FastAPI/dashboard · tax calculation · exchange
+selection · API keys / secrets · real-money trading · simulated fills. Regime is
+**descriptive only — never a trading signal.** A P4 candidate/sized plan is
+**advisory only — never authorization to trade.** Do not create fake
 implementations. Remaining future-phase packages must stay inert.
 
 ## Non-negotiable rules

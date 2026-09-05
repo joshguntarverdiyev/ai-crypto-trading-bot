@@ -7,13 +7,15 @@ whether a durable net trading edge exists at all.
 
 > **No profit is claimed or guaranteed. This is not production trading software.**
 
-## Current status: Phase 0 — Foundation
+## Current status: Phase 4 — Strategy + Sizing
 
-Phase 0 contains **no trading functionality of any kind**: no exchange
-connection, no market data, no indicators, no strategy, no AI calls, no paper
-or live trading, no order execution. It establishes only the software
-foundation (configuration, database, logging, errors, time/ID utilities, the
-offline bootstrap, and the test suite) that later phases build on.
+Phases 0–4 are complete: the software foundation (P0), exchange-agnostic market
+data (P1), deterministic indicators + descriptive regime (P2), the trading-cost
+model + net-edge gate (P3), and now the hypothesis-first quant candidate
+generator + risk-budgeting position sizing (P4). Everything remains **offline,
+deterministic, and pre-runtime**: no exchange connection, network, news, AI
+calls, RiskManager, paper/live trading, or order execution. A P4 candidate is a
+*proposal* and a sized plan is *advisory* — neither is authorization to trade.
 
 ## Source of truth
 

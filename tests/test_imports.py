@@ -49,11 +49,19 @@ CORE_MODULES = [
     "app.costs.spread",
     "app.costs.slippage",
     "app.costs.manager",
+    # Phase 4 — strategy + sizing (implemented)
+    "app.strategy",
+    "app.strategy.config",
+    "app.strategy.models",
+    "app.strategy.generator",
+    "app.sizing",
+    "app.sizing.config",
+    "app.sizing.models",
+    "app.sizing.sizer",
 ]
 
 FUTURE_PACKAGES = [
-    "app.strategy",
-    "app.news", "app.ai", "app.risk", "app.sizing",
+    "app.news", "app.ai", "app.risk",
     "app.execution", "app.tax", "app.portfolio", "app.engine",
     "app.notifications", "backtesting", "dashboard",
 ]

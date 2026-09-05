@@ -12,6 +12,7 @@ validated with Pydantic v2. Safe-by-default:
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
@@ -26,6 +27,8 @@ if TYPE_CHECKING:
     from app.costs.config import CostConfig, CostScenario
     from app.indicators.config import IndicatorConfig
     from app.regime.config import RegimeConfig
+    from app.sizing.config import SizingConfig
+    from app.strategy.config import StrategyConfig
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -107,6 +110,28 @@ class Settings(BaseSettings):
     cost_safety_margin_pct: float = 0.0005
     cost_scenario: str = "conservative"
 
+    # --- strategy (Phase 4) — provisional baseline, NOT calibrated (P7) ---
+    # Baseline candidate hypothesis parameters (Master Plan §5). The ATR target
+    # is a provisional model assumption, not a prediction. See app/strategy/config.py.
+    strategy_rsi_pullback_level: float = 40.0
+    strategy_stop_atr_mult: float = 1.5
+    strategy_target_atr_mult: float = 3.0
+    strategy_rr_threshold: float = 2.0
+    strategy_require_4h_confirmation: bool = True
+
+    # --- sizing (Phase 4) — ILLUSTRATIVE, exchange-agnostic, NOT calibrated ---
+    # Advisory pre-runtime constraints only; never authorization to trade and
+    # never a substitute for the future P6 RiskManager. See app/sizing/config.py.
+    sizing_risk_per_trade_pct: float = 0.005
+    sizing_max_single_asset_exposure_pct: float = 0.20
+    sizing_max_total_exposure_pct: float = 0.30
+    sizing_max_simultaneous_positions: int = 2
+    sizing_correlated_exposure_cap_pct: float = 0.30
+    sizing_min_notional: Decimal = Decimal("10")
+    sizing_step_size: Decimal = Decimal("0.0001")
+    sizing_tick_size: Decimal = Decimal("0.01")
+    sizing_liquidity_cap_quote: Decimal = Decimal("100000")
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -161,6 +186,19 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_strategy_params(self) -> Settings:
+        # StrategyConfig.__post_init__ is the source-of-truth for invariants;
+        # building it here surfaces violations as a fail-closed ConfigError.
+        self.strategy_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_sizing_params(self) -> Settings:
+        # SizingConfig.__post_init__ is the source-of-truth for invariants.
+        self.sizing_config()
+        return self
+
     def indicator_config(self) -> IndicatorConfig:
         from app.indicators.config import IndicatorConfig
 
@@ -203,6 +241,33 @@ class Settings(BaseSettings):
         from app.costs.config import CostScenario
 
         return CostScenario(self.cost_scenario)
+
+    def strategy_config(self) -> StrategyConfig:
+        from app.strategy.config import StrategyConfig
+
+        return StrategyConfig(
+            rsi_pullback_level=self.strategy_rsi_pullback_level,
+            stop_atr_mult=self.strategy_stop_atr_mult,
+            target_atr_mult=self.strategy_target_atr_mult,
+            rr_threshold=self.strategy_rr_threshold,
+            require_4h_confirmation=self.strategy_require_4h_confirmation,
+            cost_scenario=self.default_cost_scenario(),
+        )
+
+    def sizing_config(self) -> SizingConfig:
+        from app.sizing.config import SizingConfig
+
+        return SizingConfig(
+            risk_per_trade_pct=self.sizing_risk_per_trade_pct,
+            max_single_asset_exposure_pct=self.sizing_max_single_asset_exposure_pct,
+            max_total_exposure_pct=self.sizing_max_total_exposure_pct,
+            max_simultaneous_positions=self.sizing_max_simultaneous_positions,
+            correlated_exposure_cap_pct=self.sizing_correlated_exposure_cap_pct,
+            min_notional=self.sizing_min_notional,
+            step_size=self.sizing_step_size,
+            tick_size=self.sizing_tick_size,
+            liquidity_cap_quote=self.sizing_liquidity_cap_quote,
+        )
 
     @model_validator(mode="after")
     def _enforce_phase0_safety(self) -> Settings:
