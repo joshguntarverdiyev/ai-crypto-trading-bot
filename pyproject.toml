@@ -34,6 +34,16 @@ dashboard = [
     "uvicorn>=0.30,<0.36",
     "httpx>=0.27,<0.29",
 ]
+# Phase 8 shadow mode real adapters (OFF by default; never used by the offline
+# test suite). Kept out of the base runtime so the core import graph never
+# requires ccxt/httpx/anthropic; each is imported lazily inside its adapter.
+# Public/keyless market data (ccxt), CryptoPanic news (httpx), advisory Claude
+# (anthropic) — none of these enables trading or requires a trading key.
+shadow = [
+    "ccxt>=4,<5",
+    "httpx>=0.27,<0.29",
+    "anthropic>=0.40",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "backtesting*", "dashboard*"]

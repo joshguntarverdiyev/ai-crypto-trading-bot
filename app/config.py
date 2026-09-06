@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from app.notifications.config import NotificationsConfig
     from app.regime.config import RegimeConfig
     from app.risk.config import RiskConfig
+    from app.shadow.config import ShadowConfig
     from app.sizing.config import SizingConfig
     from app.strategy.config import StrategyConfig
     from backtesting.config import BacktestConfig
@@ -197,6 +198,22 @@ class Settings(BaseSettings):
     telegram_transport: str = "fixture"  # fixture (offline) | http (deferred/off)
     telegram_allow_controls: bool = False  # inbound pause/halt only when true
 
+    # --- shadow mode (Phase 8) — real-time decision pipeline, ZERO execution ---
+    # Sources default to the offline `fixture` provider (no network, no credentials).
+    # Real sources are OFF by default; enabling them never enables trading and never
+    # requires a trading key (market data is public/keyless).
+    market_data_source: str = "fixture"  # fixture | ccxt
+    market_data_exchange_id: str = ""  # public data-source id (required iff ccxt)
+    news_source: str = "fixture"  # fixture | cryptopanic
+    ai_provider: str = "fixture"  # fixture | anthropic
+    shadow_primary_timeframe: str = "1h"
+    shadow_confirm_timeframe: str = "4h"
+    shadow_starting_equity: Decimal = Decimal("10000")  # HYPOTHETICAL; flat per boundary
+    shadow_warmup_buffer_candles: int = 100  # added to IndicatorConfig.min_history (§6.1)
+    shadow_max_consecutive_data_failures: int = 3  # → PAUSE
+    shadow_backfill_boundaries: int = 0  # 0 → only latest completed boundary
+    shadow_clock_drift_seconds: int = 60  # exchange-vs-local drift → PAUSE
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -318,6 +335,31 @@ class Settings(BaseSettings):
     def _validate_notifications_params(self) -> Settings:
         # NotificationsConfig.__post_init__ is the source-of-truth for invariants.
         self.notifications_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_shadow_params(self) -> Settings:
+        from app.shadow.config import AIProvider, MarketDataSource, NewsSource
+
+        # Enum membership (fail-closed on an unknown source selector).
+        if self.market_data_source not in {s.value for s in MarketDataSource}:
+            raise ValueError(
+                f"market_data_source must be one of {[s.value for s in MarketDataSource]}, "
+                f"got {self.market_data_source!r}"
+            )
+        if self.news_source not in {s.value for s in NewsSource}:
+            raise ValueError(
+                f"news_source must be one of {[s.value for s in NewsSource]}, "
+                f"got {self.news_source!r}"
+            )
+        if self.ai_provider not in {s.value for s in AIProvider}:
+            raise ValueError(
+                f"ai_provider must be one of {[s.value for s in AIProvider]}, "
+                f"got {self.ai_provider!r}"
+            )
+        # ShadowConfig.__post_init__ is the source-of-truth for the rest (incl. the
+        # ccxt-requires-exchange-id fail-closed rule and timeframe validity).
+        self.shadow_config()
         return self
 
     def indicator_config(self) -> IndicatorConfig:
@@ -457,6 +499,30 @@ class Settings(BaseSettings):
             entry_fill_rule=EntryFillRule(self.backtest_entry_fill_rule),
             min_operational_trades=self.backtest_min_operational_trades,
             artifacts_dir=self.backtest_artifacts_dir,
+        )
+
+    def shadow_config(self) -> ShadowConfig:
+        from app.market_data.models import Symbol, Timeframe
+        from app.shadow.config import (
+            AIProvider,
+            MarketDataSource,
+            NewsSource,
+            ShadowConfig,
+        )
+
+        return ShadowConfig(
+            symbols=tuple(Symbol.parse(s) for s in self.market_symbols),
+            primary_timeframe=Timeframe(self.shadow_primary_timeframe),
+            confirm_timeframe=Timeframe(self.shadow_confirm_timeframe),
+            starting_equity=self.shadow_starting_equity,
+            warmup_buffer_candles=self.shadow_warmup_buffer_candles,
+            max_consecutive_data_failures=self.shadow_max_consecutive_data_failures,
+            backfill_boundaries=self.shadow_backfill_boundaries,
+            clock_drift_seconds=self.shadow_clock_drift_seconds,
+            market_data_source=MarketDataSource(self.market_data_source),
+            market_data_exchange_id=self.market_data_exchange_id,
+            news_source=NewsSource(self.news_source),
+            ai_provider=AIProvider(self.ai_provider),
         )
 
     def notifications_config(self) -> NotificationsConfig:

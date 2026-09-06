@@ -7,13 +7,28 @@ whether a durable net trading edge exists at all.
 
 > **No profit is claimed or guaranteed. This is not production trading software.**
 
-## Current status: Phase 7 — Backtesting, Dashboard & Telegram
+## Current status: Phase 8 — Shadow Mode
 
-Phases 0–7 are complete: the software foundation (P0), market data (P1),
+Phases 0–8 are complete: the software foundation (P0), market data (P1),
 indicators + regime (P2), the cost gate (P3), the candidate generator +
 advisory sizing (P4), the advisory news + Claude analyst (P5), the deterministic
-**RiskManager (final authority)** + paper engine + persistence (P6), and now the
-offline research + observability tooling (P7):
+**RiskManager (final authority)** + paper engine + persistence (P6), the offline
+research + observability tooling (P7), and now **Shadow Mode** (P8):
+
+* a **real-time decision pipeline with ZERO execution** (`app/shadow/`) that runs
+  the exact, unmodified P1→P6 contracts against real/current market data and
+  records a **shadow decision** ("decided, but not executed") per completed
+  candle boundary — a **flat per-tick hypothetical account** (no evolving book,
+  that's P9), a **hypothetical** (pure, non-mutating) fill, warm-up fail-closed,
+  idempotent + restart-safe, with full failure-state handling;
+* **real adapters** behind the frozen P1/P5 interfaces — CCXT **public/keyless**
+  OHLCV, CryptoPanic news, the Anthropic analyst — **OFF by default**, lazily
+  imported, and never exercised by the offline test suite;
+* shadow-only audit (`shadow_decisions`/`shadow_runs`), read-only dashboard shadow
+  views, and Telegram shadow alerts — none of which can place, size, or modify a
+  trade.
+
+The Phase 7 research + observability tooling:
 
 * a **pure-quant backtest engine** (`backtesting/`) that replays historical OHLCV
   through the **exact, unmodified** P2→P6 contracts via one global chronological
@@ -30,12 +45,14 @@ offline research + observability tooling (P7):
 * a **Telegram** alert channel + inbound pause/halt-only controls
   (`app/notifications/`), offline fixture transport by default.
 
-Everything remains **offline and simulated**: `LIVE_TRADING` stays false; no real
-exchange, network, or credentials. The backtest is **pure-quant** — no news/Claude
-and **no fabricated historical AI** (Master Plan §8) — and makes **no edge or
+Everything remains **fail-closed and non-trading**: `LIVE_TRADING` and
+`PAPER_TRADING` stay false; Shadow Mode places no orders and mutates no portfolio
+state, uses no trading credentials (market data is public/keyless), and its real
+adapters are off by default. The backtest is **pure-quant** — no news/Claude and
+**no fabricated historical AI** (Master Plan §8) — and makes **no edge or
 performance claim** (no optimizer, no calibration). The dashboard and Telegram
-**can never place a trade**. **Backtest/paper performance is never claimed to
-equal live.**
+**can never place a trade**. **Shadow/backtest/paper performance is never claimed
+to equal live**, and **profitability is not a P8 exit criterion.**
 
 ## Source of truth
 
@@ -98,6 +115,17 @@ python -m scripts.run_backtest    # writes artifacts + a backtest_runs row; prin
 
 Backtests are offline and deterministic and make **no edge/performance claim**.
 
+## Run Shadow Mode (offline by default)
+
+```bash
+python -m scripts.run_shadow          # fixture sources → fully offline, no credentials
+# real sources (still no trading, no keys required):
+pip install -e ".[shadow]"            # ccxt (public/keyless), httpx (news), anthropic (advisory)
+```
+
+Shadow Mode runs the real-time decision pipeline with **zero execution** and
+records shadow decisions only. It never places an order or changes portfolio state.
+
 ## Run the read-only dashboard (optional deps)
 
 ```bash
@@ -124,10 +152,11 @@ app/            application package
   market_data/ indicators/ regime/ strategy/ costs/ news/ ai/ risk/
   sizing/ execution/ portfolio/ engine/          implemented (P1–P6)
   notifications/  Telegram alerts + stop-only controls (P7)
+  shadow/         Shadow Mode: real-time pipeline, zero execution (P8)
   tax/            future-phase package — intentionally empty (P10)
 backtesting/    pure-quant backtest engine + metrics/robustness/walk-forward (P7)
-dashboard/      read-only FastAPI dashboard + stop-only controls (P7)
-scripts/        init_db, run_backtest, run_dashboard, dev scripts
+dashboard/      read-only FastAPI dashboard + stop-only controls (P7/P8 views)
+scripts/        init_db, run_backtest, run_dashboard, run_shadow, dev scripts
 tests/          pytest suite (offline, deterministic)
 docs/           architecture, development, security, phase-0..7
 data/ logs/     local (git-ignored) runtime artifacts + backtest outputs

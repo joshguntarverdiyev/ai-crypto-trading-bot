@@ -19,9 +19,12 @@ app/main             offline bootstrap (config -> logging -> db -> validate)
 ```
 
 Implemented packages: `market_data`, `indicators`, `regime`, `strategy`, `costs`,
-`news`, `ai`, `risk`, `sizing`, `execution`, `portfolio`, `engine` (P1–P6), plus
-**P7** `backtesting/`, `dashboard/`, and `app/notifications/`. The only remaining
-inert future-phase boundary is `app/tax/` (P10).
+`news`, `ai`, `risk`, `sizing`, `execution`, `portfolio`, `engine` (P1–P6),
+**P7** `backtesting/`, `dashboard/`, and `app/notifications/`, plus **P8**
+`app/shadow/` (Shadow Mode — real-time decision pipeline, zero execution; real
+adapters `app/market_data/ccxt_adapter.py`, `app/news/http_adapter.py`,
+`app/ai/anthropic_provider.py` behind the frozen P1/P5 interfaces, off by default).
+The only remaining inert future-phase boundary is `app/tax/` (P10).
 
 ## Foundation conventions (all future models follow these)
 
@@ -50,7 +53,8 @@ Phase 0 base:
 | risk_decisions — **IMPLEMENTED (P6)** | P6 |
 | paper_orders, paper_fills, positions, portfolio_snapshots, kill_switch_state — **IMPLEMENTED (P6, paper)**; orders/fills/fees to a real venue + exchange_account_snapshots deferred | P6/P10/P11 |
 | **backtest_runs — IMPLEMENTED (P7)** (research index; full artifacts on the filesystem) | P7 |
-| paper_trading_runs | P8/P9 |
+| **shadow_decisions, shadow_runs — IMPLEMENTED (P8)** (shadow-only audit; not operational) | P8 |
+| paper_trading_runs — **deferred to P9** (evolving operational paper portfolio) | P9 |
 
 Reconstruction target (Master Plan §16): *market snapshot → validation →
 features → regime → strategy version → candidate → cost → available news →

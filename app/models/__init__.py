@@ -23,6 +23,7 @@ from app.models.kill_switch import KILL_SWITCH_ROW_ID, KillSwitchRecord
 from app.models.news_record import NewsRecord
 from app.models.paper import PaperFillRecord, PaperOrderRecord
 from app.models.portfolio import PortfolioSnapshotRecord, PositionRecord
+from app.models.shadow import ShadowDecisionRecord, ShadowRunRecord
 from app.models.system_event import SystemEvent
 
 __all__ = [
@@ -46,4 +47,7 @@ __all__ = [
     "KILL_SWITCH_ROW_ID",
     # Phase 7 — backtest run index (research artifacts, not operational)
     "BacktestRunRecord",
+    # Phase 8 — shadow-mode audit (shadow-only, not operational)
+    "ShadowDecisionRecord",
+    "ShadowRunRecord",
 ]

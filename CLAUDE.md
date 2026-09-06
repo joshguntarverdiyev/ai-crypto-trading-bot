@@ -21,6 +21,30 @@ authoritative.
 
 ## Current phase
 
+**Phase 8 — Shadow Mode (COMPLETE).** Phase 0–7 + a **real-time decision pipeline
+with ZERO execution** (`app/shadow/`): it runs the EXACT, unmodified P1→P6
+contracts (market data → features → regime → strategy → cost gate → news → Claude
+→ sizing → RiskManager) against real/current market data and records a **shadow
+decision** ("decided, but not executed") per completed candle boundary. It uses a
+**flat per-tick hypothetical account** (config starting equity, zero open
+positions — **no evolving book; that is P9**), computes a **hypothetical**
+(pure, non-mutating) fill via `PaperBroker.simulate`, and **writes no operational/
+portfolio tables and calls no ledger** — there is provably no reachable execution
+path (the P6 `TradingEngine` is neither modified nor imported). Warm-up is
+fail-closed (`IndicatorConfig.min_history` + buffer; insufficient history → HOLD);
+decisions are idempotent on `(decision_time, symbol)` and restart-safe; missed
+boundaries are gaps, not decisions; `available_at <= decision_time` is preserved;
+external calls are at-least-once (a commit failure may repeat a provider call but
+never a duplicate durable decision). Failure states: data failure → HOLD/PAUSE,
+persistence failure → HALT, clock drift → PAUSE, kill HALTED/PAUSED → skip (flat
+account ⇒ no exit processing). **Real adapters** (CCXT **public/keyless** OHLCV,
+CryptoPanic news, Anthropic analyst) sit behind the frozen P1/P5 interfaces,
+**OFF by default**, lazily imported, never exercised offline; **no trading
+credentials are used**. New shadow-only audit (`shadow_decisions`/`shadow_runs`),
+read-only dashboard shadow views, and Telegram shadow alerts can never place,
+size, or modify a trade. `LIVE_TRADING`/`PAPER_TRADING` stay fail-closed false;
+**profitability is NOT a P8 exit criterion**; **shadow ≠ paper ≠ live**.
+
 **Phase 7 — Backtesting, Statistical Validation, Dashboard & Telegram
 (COMPLETE).** Phase 0–6 + offline, deterministic **research + observability
 tooling**: a **pure-quant backtest engine** (`backtesting/`) that replays
@@ -58,7 +82,7 @@ per-tick persistence with an independent-session kill-switch HALT. `LIVE_TRADING
 stays false; offline/simulated only; **paper ≠ live performance**. Claude remains
 advisory and can never override the RiskManager.
 
-## Allowed scope (Phase 0–7)
+## Allowed scope (Phase 0–8)
 
 Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
 tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
@@ -86,29 +110,47 @@ table writes; no news/Claude; sentinel verdict never persisted; no optimizer/no
 calibration/no edge claim), the **read-only FastAPI dashboard** with
 stop-direction-only pause/halt controls (`dashboard/`), and the **Telegram**
 alert channel + inbound pause/halt-only controls behind a transport interface
-(`app/notifications/`, offline fixture default; real HTTP transport off/deferred).
+(`app/notifications/`, offline fixture default; real HTTP transport off/deferred)
+**+ (P8)** Shadow Mode (`app/shadow/`): the real-time decision pipeline with ZERO
+execution over the frozen P1→P6 contracts — flat per-tick hypothetical account,
+hypothetical (pure, non-mutating) fill, warm-up fail-closed, idempotent +
+restart-safe, missed-boundary gaps, data/persistence/drift failure handling,
+shadow-only audit (`shadow_decisions`/`shadow_runs`), read-only dashboard shadow
+views + Telegram shadow alerts — plus **real adapters** behind the frozen P1/P5
+interfaces (CCXT public/keyless OHLCV, CryptoPanic news, Anthropic analyst),
+OFF by default, lazily imported, never exercised offline, no trading credentials;
+`LIVE_TRADING`/`PAPER_TRADING` stay fail-closed false; no operational/portfolio
+writes; profitability is not a P8 exit criterion.
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
-**Real news/HTTP fetch (RSS/CryptoPanic) · the `anthropic` SDK / live Claude API
-calls · API keys / secrets** · **real exchange API / CCXT / live execution /
-network fetch / WebSocket / live market data** · order book · **additional
-indicators (MACD/Bollinger/volume-MA)** · **strategy/cost/risk calibration,
-automated parameter optimization / hyperparameter search, or any edge/performance
-claim** · **live trading (`LIVE_TRADING` stays false) / real-money trading / real
-order execution / real-exchange reconciliation / `clientOrderId` to a venue /
-exchange-native stops** · leverage / futures / margin / shorting · HFT / scalping
-· **Shadow Mode runtime (P8)** · **News/Claude in the backtest or any fake
-historical-news/AI backtest (§8)** · **real Telegram network send / Telegram
-trading** · **dashboard trading / any dashboard mutation beyond stop-direction
-pause/halt** · tax calculation (P10) · exchange selection · NTP/clock-drift ·
-PostgreSQL migration. Regime is **descriptive only — never a trading signal.** A
-candidate/sized plan is **advisory only**, and the Claude analyst is **advisory
-only — never authorization to trade** and never overrides the RiskManager (the
-deterministic final authority). The backtester must **reuse** the frozen P2–P6
-contracts (never a second RiskManager/CostManager) and never write operational
-tables. Paper/backtest performance is never claimed to equal live. Do not create
-fake implementations. `app/tax/` stays inert until P10.
+**P9 Paper Validation runtime** — an evolving operational paper portfolio,
+accumulated hypothetical PnL, carried virtual positions, `paper_trading_runs`, or
+rolling statistical/regime validation (Shadow Mode's flat per-tick account must
+**not** grow into a book) · **live trading (`LIVE_TRADING` stays false) /
+`PAPER_TRADING` true / real-money trading / real order execution / real-exchange
+reconciliation / `clientOrderId` to a venue / exchange-native stops /
+authenticated (trading) API keys or withdrawal-enabled keys** · **WebSocket /
+live order-book depth / order book** · **additional indicators
+(MACD/Bollinger/volume-MA)** · **strategy/cost/risk calibration, automated
+parameter optimization / hyperparameter search, or any edge/performance claim** ·
+leverage / futures / margin / shorting · HFT / scalping · **News/Claude in the
+backtest or any fake historical-news/AI backtest (§8)** · **real Telegram network
+send on by default / Telegram trading** · **dashboard trading / any dashboard
+mutation beyond stop-direction pause/halt** · tax calculation (P10) · **live
+exchange selection / commitment** · full NTP/clock-drift subsystem (P10) ·
+PostgreSQL migration. The P8 real adapters (CCXT **public/keyless** market data,
+CryptoPanic news, Anthropic **advisory** analyst) are allowed only **off by
+default, lazily imported, and never in the offline test suite**, and must **never**
+enable trading or require a trading key. Regime is **descriptive only — never a
+trading signal.** A candidate/sized plan is **advisory only**, and the Claude
+analyst is **advisory only — never authorization to trade** and never overrides
+the RiskManager (the deterministic final authority). Shadow Mode must **reuse** the
+frozen P1–P6 contracts (never a second RiskManager/CostManager), **never write
+operational/portfolio tables, and never reach a ledger/execution path**. The
+backtester must likewise reuse the frozen contracts and never write operational
+tables. Shadow/paper/backtest performance is never claimed to equal live. Do not
+create fake implementations. `app/tax/` stays inert until P10.
 
 ## Non-negotiable rules
 

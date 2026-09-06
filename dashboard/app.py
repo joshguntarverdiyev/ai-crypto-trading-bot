@@ -101,6 +101,14 @@ def create_app(
     def backtests(limit: int = 25) -> list[dict[str, object]]:
         return reads.recent_backtest_runs(sf, limit)
 
+    @app.get("/api/shadow/decisions")
+    def shadow_decisions(limit: int = 50) -> list[dict[str, object]]:
+        return reads.recent_shadow_decisions(sf, limit)
+
+    @app.get("/api/shadow/runs")
+    def shadow_runs(limit: int = 25) -> list[dict[str, object]]:
+        return reads.recent_shadow_runs(sf, limit)
+
     # --- the ONLY two mutating endpoints (stop-direction only) ---
     @app.post("/control/pause")
     def control_pause(body: ControlRequest, _: None = Depends(guard)) -> dict[str, object]:

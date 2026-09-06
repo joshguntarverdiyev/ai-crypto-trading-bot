@@ -25,6 +25,8 @@ from app.models import (
     PortfolioSnapshotRecord,
     PositionRecord,
     RiskDecisionRecord,
+    ShadowDecisionRecord,
+    ShadowRunRecord,
     SystemEvent,
 )
 
@@ -186,6 +188,45 @@ def recent_backtest_runs(sf: sessionmaker[Session], limit: int = 25) -> list[dic
                 "dataset_hash": r.dataset_hash, "cost_scenario": r.cost_scenario,
                 "entry_fill_rule": r.entry_fill_rule, "engine_version": r.engine_version,
                 "status": r.status, "artifact_path": r.artifact_path,
+            }
+            for r in rows
+        ]
+
+
+def recent_shadow_decisions(sf: sessionmaker[Session], limit: int = 50) -> list[dict[str, Any]]:
+    with session_scope(sf) as session:
+        rows = session.scalars(
+            select(ShadowDecisionRecord)
+            .order_by(ShadowDecisionRecord.decision_time.desc()).limit(limit)
+        ).all()
+        return [
+            {
+                "decision_time": _s(r.decision_time), "symbol": r.symbol,
+                "outcome": r.outcome, "stage": r.stage, "reason": r.reason,
+                "regime": r.regime,
+                "hyp_side": r.hyp_side, "hyp_quantity": _s(r.hyp_quantity),
+                "hyp_entry_ref": _s(r.hyp_entry_ref), "hyp_fill_price": _s(r.hyp_fill_price),
+                "hyp_fill_state": r.hyp_fill_state,
+                "claude_decision_id": r.claude_decision_id, "risk_decision_id": r.risk_decision_id,
+                "shadow_run_id": r.shadow_run_id,
+                "note": "shadow decision — NOT an executed trade",
+            }
+            for r in rows
+        ]
+
+
+def recent_shadow_runs(sf: sessionmaker[Session], limit: int = 25) -> list[dict[str, Any]]:
+    with session_scope(sf) as session:
+        rows = session.scalars(
+            select(ShadowRunRecord).order_by(ShadowRunRecord.run_time.desc()).limit(limit)
+        ).all()
+        return [
+            {
+                "id": r.id, "run_time": _s(r.run_time), "stopped_at": _s(r.stopped_at),
+                "status": r.status, "market_data_source": r.market_data_source,
+                "market_data_exchange_id": r.market_data_exchange_id,
+                "news_source": r.news_source, "ai_provider": r.ai_provider,
+                "engine_version": r.engine_version,
             }
             for r in rows
         ]

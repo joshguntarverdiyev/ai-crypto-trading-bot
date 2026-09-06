@@ -21,6 +21,7 @@ class AlertKind(StrEnum):
     ERROR = "error"  # a critical system event / error
     DATA_STALE = "data_stale"  # data-freshness/staleness alert
     INFO = "info"  # generic operational note
+    SHADOW_WOULD_TRADE = "shadow_would_trade"  # Phase 8: a HYPOTHETICAL would-be trade
 
 
 @dataclass(frozen=True)
