@@ -30,10 +30,12 @@ if TYPE_CHECKING:
     from app.execution.config import PaperConfig
     from app.indicators.config import IndicatorConfig
     from app.news.config import NewsConfig
+    from app.notifications.config import NotificationsConfig
     from app.regime.config import RegimeConfig
     from app.risk.config import RiskConfig
     from app.sizing.config import SizingConfig
     from app.strategy.config import StrategyConfig
+    from backtesting.config import BacktestConfig
 
 _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
@@ -173,6 +175,28 @@ class Settings(BaseSettings):
     paper_liquidity_fill_cap: Decimal = Decimal("100000")  # simulation assumption (H7)
     paper_starting_equity: Decimal = Decimal("10000")
 
+    # --- backtesting (Phase 7) — offline, deterministic, pure-quant; NOT calibrated ---
+    # Research tooling only: no trading, no calibration/optimization, no edge claim.
+    backtest_dataset_name: str = "example"
+    backtest_starting_equity: Decimal = Decimal("10000")
+    backtest_cost_scenario: str = "conservative"  # headline scenario (§10/§12)
+    backtest_seed: int = 12345  # seeds bootstrap/Monte Carlo only (replay has no RNG)
+    backtest_halt_policy: str = "end_run"  # end_run (default) | reset_next_period
+    backtest_entry_fill_rule: str = "next_open"  # next_open (default) | signal_close (§10)
+    backtest_min_operational_trades: int = 100  # operational floor; NOT significance
+    backtest_artifacts_dir: str = "data/backtests"
+
+    # --- dashboard (Phase 7) — read-only + stop-direction-only controls (§17/§23) ---
+    dashboard_enabled: bool = False
+    dashboard_host: str = "127.0.0.1"  # loopback by default; never public
+    dashboard_port: int = 8787
+    dashboard_auth_token: str = ""  # required to mutate; empty => controls refused
+
+    # --- notifications / telegram (Phase 7) — offline fixture first; never trades ---
+    telegram_enabled: bool = False
+    telegram_transport: str = "fixture"  # fixture (offline) | http (deferred/off)
+    telegram_allow_controls: bool = False  # inbound pause/halt only when true
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -269,6 +293,31 @@ class Settings(BaseSettings):
     def _validate_paper_params(self) -> Settings:
         # PaperConfig.__post_init__ is the source-of-truth for invariants.
         self.paper_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_backtest_params(self) -> Settings:
+        # BacktestConfig.__post_init__ is the source-of-truth for invariants;
+        # building it here surfaces any violation as a fail-closed ConfigError.
+        self.backtest_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_dashboard_params(self) -> Settings:
+        from dashboard.config import DashboardConfig  # local import avoids cycle
+
+        DashboardConfig(
+            enabled=self.dashboard_enabled,
+            host=self.dashboard_host,
+            port=self.dashboard_port,
+            auth_token=self.dashboard_auth_token,
+        )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_notifications_params(self) -> Settings:
+        # NotificationsConfig.__post_init__ is the source-of-truth for invariants.
+        self.notifications_config()
         return self
 
     def indicator_config(self) -> IndicatorConfig:
@@ -394,6 +443,33 @@ class Settings(BaseSettings):
             liquidity_cap_quote=self.sizing_liquidity_cap_quote,
         )
 
+    def backtest_config(self) -> BacktestConfig:
+        from app.costs.config import CostScenario
+        from backtesting.config import BacktestConfig, EntryFillRule, HaltPolicy
+        from backtesting.config import BacktestConfig as _BC  # noqa: F401
+
+        return BacktestConfig(
+            dataset_name=self.backtest_dataset_name,
+            starting_equity=self.backtest_starting_equity,
+            cost_scenario=CostScenario(self.backtest_cost_scenario),
+            seed=self.backtest_seed,
+            halt_policy=HaltPolicy(self.backtest_halt_policy),
+            entry_fill_rule=EntryFillRule(self.backtest_entry_fill_rule),
+            min_operational_trades=self.backtest_min_operational_trades,
+            artifacts_dir=self.backtest_artifacts_dir,
+        )
+
+    def notifications_config(self) -> NotificationsConfig:
+        from app.notifications.config import NotificationsConfig, NotificationTransportKind
+
+        return NotificationsConfig(
+            enabled=self.telegram_enabled,
+            transport=NotificationTransportKind(self.telegram_transport),
+            allow_controls=self.telegram_allow_controls,
+            bot_token=self.telegram_bot_token,
+            chat_id=self.telegram_chat_id,
+        )
+
     @model_validator(mode="after")
     def _enforce_phase0_safety(self) -> Settings:
         # Fail-closed: Phase 0 has no execution layer. Live trading cannot be
@@ -412,6 +488,7 @@ class Settings(BaseSettings):
             self.exchange_api_secret,
             self.anthropic_api_key,
             self.telegram_bot_token,
+            self.dashboard_auth_token,
         ]
         return [c for c in candidates if c]
 

@@ -18,10 +18,10 @@ app/models/          Base + mixins + audit models
 app/main             offline bootstrap (config -> logging -> db -> validate)
 ```
 
-Future-phase packages exist as inert boundaries (`market_data`, `indicators`,
-`regime`, `strategy`, `costs`, `news`, `ai`, `risk`, `sizing`, `execution`,
-`tax`, `portfolio`, `engine`, `notifications`, plus `backtesting/`,
-`dashboard/`).
+Implemented packages: `market_data`, `indicators`, `regime`, `strategy`, `costs`,
+`news`, `ai`, `risk`, `sizing`, `execution`, `portfolio`, `engine` (P1–P6), plus
+**P7** `backtesting/`, `dashboard/`, and `app/notifications/`. The only remaining
+inert future-phase boundary is `app/tax/` (P10).
 
 ## Foundation conventions (all future models follow these)
 
@@ -49,7 +49,7 @@ Phase 0 base:
 | news, claude_decisions — **IMPLEMENTED (P6)**; model_versions/prompt_versions denormalized onto claude_decisions; sentiment deferred | P5/P6 |
 | risk_decisions — **IMPLEMENTED (P6)** | P6 |
 | paper_orders, paper_fills, positions, portfolio_snapshots, kill_switch_state — **IMPLEMENTED (P6, paper)**; orders/fills/fees to a real venue + exchange_account_snapshots deferred | P6/P10/P11 |
-| backtest_runs | P7 |
+| **backtest_runs — IMPLEMENTED (P7)** (research index; full artifacts on the filesystem) | P7 |
 | paper_trading_runs | P8/P9 |
 
 Reconstruction target (Master Plan §16): *market snapshot → validation →

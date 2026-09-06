@@ -100,11 +100,40 @@ CORE_MODULES = [
     "app.models.paper",
     "app.models.portfolio",
     "app.models.kill_switch",
+    # Phase 7 — backtesting (implemented, offline, pure-quant)
+    "backtesting",
+    "backtesting.version",
+    "backtesting.config",
+    "backtesting.models",
+    "backtesting.dataset",
+    "backtesting.costs",
+    "backtesting.engine",
+    "backtesting.metrics",
+    "backtesting.statistics",
+    "backtesting.robustness",
+    "backtesting.walkforward",
+    "backtesting.benchmark",
+    "backtesting.report",
+    "backtesting.store",
+    # Phase 7 — backtest persistence model
+    "app.models.backtest",
+    # Phase 7 — notifications (implemented, offline fixture transport)
+    "app.notifications",
+    "app.notifications.config",
+    "app.notifications.models",
+    "app.notifications.transport",
+    "app.notifications.formatter",
+    "app.notifications.notifier",
+    # Phase 7 — dashboard (implemented, read-only + stop-only controls)
+    "dashboard",
+    "dashboard.config",
+    "dashboard.reads",
+    "dashboard.auth",
+    "dashboard.app",
 ]
 
 FUTURE_PACKAGES = [
     "app.tax",
-    "app.notifications", "backtesting", "dashboard",
 ]
 
 

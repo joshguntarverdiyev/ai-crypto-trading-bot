@@ -13,6 +13,7 @@ Plan §16) reconstructable.
 
 from __future__ import annotations
 
+from app.models.backtest import BacktestRunRecord
 from app.models.base import Base, TimestampMixin, UUIDMixin, VersionMixin
 from app.models.candle import CandleRecord
 from app.models.config_version import ConfigVersion
@@ -43,4 +44,6 @@ __all__ = [
     "PortfolioSnapshotRecord",
     "KillSwitchRecord",
     "KILL_SWITCH_ROW_ID",
+    # Phase 7 — backtest run index (research artifacts, not operational)
+    "BacktestRunRecord",
 ]

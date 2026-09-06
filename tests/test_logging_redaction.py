@@ -37,6 +37,14 @@ def test_settings_secrets_are_redacted_end_to_end() -> None:
     assert "LIVEKEY_XYZ" not in out
 
 
+def test_phase7_dashboard_token_is_a_redactable_secret() -> None:
+    # The Phase 7 dashboard auth token must be treated as a secret (never logged).
+    s = load_settings(_env_file=None, dashboard_auth_token="DASH_TOKEN_123")
+    assert "DASH_TOKEN_123" in s.secret_values()
+    out = _format("auth with DASH_TOKEN_123", secrets=s.secret_values())
+    assert "DASH_TOKEN_123" not in out
+
+
 def test_configure_logging_is_idempotent() -> None:
     s = load_settings(_env_file=None)
     configure_logging(s)

@@ -3,7 +3,10 @@
 # for environments/tooling that expect requirements.txt. Keep the two in sync.
 #
 # Dev tooling (pytest, ruff, mypy) lives in pyproject.toml [project.optional-dependencies].dev
-# Install runtime + dev with:  pip install -e ".[dev]"
+# The Phase 7 dashboard deps (fastapi, uvicorn, httpx) live in the optional
+# `dashboard` group — the core backtest engine + metrics are pure-Python.
+# Install runtime + dev with:            pip install -e ".[dev]"
+# Install runtime + dev + dashboard with: pip install -e ".[dev,dashboard]"
 
 pydantic>=2,<3
 pydantic-settings>=2,<3

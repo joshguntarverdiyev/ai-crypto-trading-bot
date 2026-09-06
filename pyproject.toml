@@ -10,9 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
 
-# Phase 0 runtime dependencies ONLY. Future-phase libraries (ccxt, anthropic,
-# python-telegram-bot, fastapi, pandas/pandas-ta) are intentionally excluded
-# until the phase that uses them.
+# Core runtime dependencies (P0–P6). Deliberately minimal. Future-phase libraries
+# (ccxt, anthropic, python-telegram-bot, pandas/numpy/scipy) remain excluded until
+# the phase that uses them. Phase 7 statistics/metrics/Monte-Carlo are pure-Python
+# (stdlib math/statistics/random) — no numpy/scipy/pandas.
 dependencies = [
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
@@ -25,9 +26,17 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+# Phase 7 dashboard (read-only + stop-only controls). Kept out of the base
+# runtime so the core app import graph never requires FastAPI. httpx powers the
+# in-process, offline Starlette TestClient used by the dashboard tests.
+dashboard = [
+    "fastapi>=0.115,<0.116",
+    "uvicorn>=0.30,<0.36",
+    "httpx>=0.27,<0.29",
+]
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "backtesting*", "dashboard*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
