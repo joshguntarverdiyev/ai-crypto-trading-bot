@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.database import make_engine, make_session_factory, session_scope
+from app.database import make_session_factory, session_scope
 from app.models import (
     KILL_SWITCH_ROW_ID,
     BacktestRunRecord,
@@ -280,9 +281,18 @@ def _catalog_row(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | Non
 
 
 def _open_run_readonly(db_path: str) -> sessionmaker[Session]:
-    """Open a run's OWN database for READ-ONLY use (dashboard issues SELECTs only;
-    the runner is the sole writer and WAL allows concurrent reads)."""
-    return make_session_factory(make_engine(f"sqlite:///{db_path}"))
+    """Open a run's OWN database ENFORCED read-only at the SQLite connection level.
+
+    The dashboard only ever issues SELECTs, but this makes that physically
+    impossible to violate: the connection is opened with the SQLite URI
+    ``mode=ro`` (via ``uri=true``), so any write raises ``OperationalError``
+    (``attempt to write a readonly database``). WAL concurrent reads keep working —
+    the P9 runner remains the sole writer. An absolute path keeps the ``file:`` URI
+    unambiguous. This never touches the paper writer/store or the run DB schema."""
+    abspath = Path(db_path).expanduser().resolve()
+    url = f"sqlite:///file:{abspath}?mode=ro&uri=true"
+    engine = create_engine(url, connect_args={"check_same_thread": False}, future=True)
+    return make_session_factory(engine)
 
 
 def _tf_seconds(timeframe: str) -> int:

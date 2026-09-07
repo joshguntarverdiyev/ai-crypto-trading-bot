@@ -71,6 +71,18 @@ def _market_adapter(settings: Settings, cfg: PaperValidationConfig) -> ExchangeA
 
 
 def _news_adapter(settings: Settings, cfg: PaperValidationConfig) -> NewsSourceAdapter:
+    if cfg.news_source is NewsSource.CRYPTO_NEWS_API:
+        # Tier-2: the decision-time read path is STORE-BACKED (no boundary network
+        # I/O). The isolated ingestion store is populated by the separate poller
+        # (scripts/run_news_ingest). available_at = max(published+settle, first_seen).
+        from app.news.cryptonews_adapter import IngestionStoreNewsAdapter
+        from app.news.ingestion import make_news_ingest_store
+
+        store = make_news_ingest_store(settings.news_ingest_db_path)
+        inner = IngestionStoreNewsAdapter(
+            store, lookback_hours=settings.crypto_news_lookback_hours
+        )
+        return SettleMarginNewsAdapter(inner, settle_seconds=cfg.news_settle_seconds)
     if cfg.news_source is NewsSource.CRYPTOPANIC:
         from app.news.http_adapter import HttpNewsAdapter
 

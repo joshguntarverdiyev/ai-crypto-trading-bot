@@ -1,13 +1,25 @@
-"""Conservative news availability adapter (Phase 9, §35.8).
+"""Centralized conservative news-availability adapter (Phase 9, §35.8).
 
-Wraps any frozen P5 ``NewsSourceAdapter`` and pushes each item's ``available_at``
-forward by a configured settle margin. Because the frozen ``NewsService`` gate
-excludes items whose ``available_at > decision_time``, this makes P9 news strictly
-MORE conservative than the raw feed: an item published just before a boundary
-(within the margin) is not admitted until the margin has elapsed, preventing
-discovery-lag over-admission near the boundary. It never over-admits and never
-fabricates availability; ``available_at <= decision_time`` continues to hold
-honestly. The margin is pre-registered and recorded in the run's config snapshot.
+Wraps any frozen P5 ``NewsSourceAdapter`` and assigns each item's ``available_at``
+as the CENTRAL availability authority:
+
+    available_at = max(published_at + settle_seconds, first_seen_at)
+
+where ``first_seen_at`` is the item's ``discovered_at`` (Tier-2 ingestion records
+the genuine earliest observation; falls back to ``published_at`` when absent).
+Because the frozen ``NewsService`` gate excludes items whose
+``available_at > decision_time``, this makes P9 news strictly MORE conservative
+than the raw feed on BOTH axes: an item is available no earlier than the
+settle-delayed publish time AND no earlier than we actually first saw it —
+preventing discovery-lag over-admission near a boundary and preserving
+no-look-ahead. It never over-admits and never fabricates availability: when
+``published_at`` is unknown the item is left untouched (``NewsService`` flags it).
+``available_at <= decision_time`` continues to hold honestly. The margin is
+pre-registered and recorded in the run's config snapshot.
+
+Backward-compatible: for a legacy item with ``available_at == published_at`` and no
+separate ``discovered_at``, the result is ``published_at + settle`` — identical to
+the prior shift-only behavior.
 """
 
 from __future__ import annotations
@@ -28,12 +40,15 @@ class SettleMarginNewsAdapter(NewsSourceAdapter):
 
     def fetch(self, *, now: datetime, since: datetime | None = None) -> list[NewsItemRaw]:
         raw = self._inner.fetch(now=now, since=since)
-        if self._delta.total_seconds() == 0:
-            return raw
-        shifted: list[NewsItemRaw] = []
+        out: list[NewsItemRaw] = []
         for item in raw:
-            if item.available_at is not None:
-                shifted.append(replace(item, available_at=item.available_at + self._delta))
-            else:
-                shifted.append(item)
-        return shifted
+            published = item.published_at
+            if published is None:
+                # No usable event time → do not fabricate availability; the frozen
+                # NewsService normalization/gate handles it (NO_TIMESTAMP/UNKNOWN).
+                out.append(item)
+                continue
+            first_seen = item.discovered_at if item.discovered_at is not None else published
+            available_at = max(published + self._delta, first_seen)
+            out.append(replace(item, available_at=available_at))
+        return out

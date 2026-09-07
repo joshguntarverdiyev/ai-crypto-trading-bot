@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,4 +32,18 @@ def test_env_example_has_no_populated_secrets() -> None:
 
 
 def test_no_committed_env_file() -> None:
-    assert not (ROOT / ".env").exists(), ".env must not exist in the repo"
+    """The security property is that ``.env`` is never COMMITTED/tracked — not that a
+    local (git-ignored) ``.env`` is absent. A developer/operator legitimately keeps a
+    local ``.env`` for runtime secrets; what must never happen is it entering git."""
+    # 1. .env must be git-ignored (defense against accidental `git add`).
+    ignored = subprocess.run(
+        ["git", "check-ignore", "-q", ".env"], cwd=ROOT, check=False
+    )
+    assert ignored.returncode == 0, ".env must be git-ignored"
+
+    # 2. .env must not be tracked by git (the real "not committed" property).
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", ".env"],
+        cwd=ROOT, check=False, capture_output=True,
+    )
+    assert tracked.returncode != 0, ".env must not be tracked/committed in git"

@@ -205,7 +205,7 @@ class Settings(BaseSettings):
     # requires a trading key (market data is public/keyless).
     market_data_source: str = "fixture"  # fixture | ccxt
     market_data_exchange_id: str = ""  # public data-source id (required iff ccxt)
-    news_source: str = "fixture"  # fixture | cryptopanic
+    news_source: str = "fixture"  # fixture | cryptopanic | cryptonewsapi
     ai_provider: str = "fixture"  # fixture | anthropic
     shadow_primary_timeframe: str = "1h"
     shadow_confirm_timeframe: str = "4h"
@@ -240,6 +240,21 @@ class Settings(BaseSettings):
     paper_concentration_top_k: int = 3
     paper_mc_max_drawdown_ceiling: float = 0.25
     paper_seed: int = 12345
+
+    # --- Crypto News API news provider (Phase 9; Tier-2 continuous ingestion) ---
+    # Real HTTP provider selected via ``news_source=cryptonewsapi``. The token is a
+    # DEDICATED secret (never the dashboard/Anthropic/exchange key), supplied only
+    # via env/.env; it is never logged, committed, or placed in provenance. A
+    # lightweight poller (``scripts/run_news_ingest``) writes first_seen_at +
+    # ingestion provenance to an isolated ingestion DB; the decision-time read path
+    # is store-backed (no boundary network I/O) for defensible no-look-ahead.
+    crypto_news_api_token: str = ""  # SECRET; required iff news_source=cryptonewsapi
+    crypto_news_base_url: str = "https://cryptonews-api.com/api/v1"
+    crypto_news_items: int = 50  # page size per poll (bounded)
+    crypto_news_max_pages: int = 1  # pagination cap per poll (cost control)
+    crypto_news_poll_seconds: int = 900  # continuous ingestion interval (15 min)
+    crypto_news_lookback_hours: int = 24  # decision-time store read window
+    news_ingest_db_path: str = "data/news_ingest.db"  # isolated ingestion store (global)
 
     @field_validator("log_level")
     @classmethod
@@ -592,6 +607,16 @@ class Settings(BaseSettings):
             seed=self.paper_seed,
         )
 
+    def crypto_news_config(self):  # noqa: ANN201 (return type imported lazily)
+        from app.news.cryptonews_adapter import CryptoNewsConfig
+
+        return CryptoNewsConfig(
+            token=self.crypto_news_api_token,
+            base_url=self.crypto_news_base_url,
+            items=self.crypto_news_items,
+            max_pages=self.crypto_news_max_pages,
+        )
+
     def notifications_config(self) -> NotificationsConfig:
         from app.notifications.config import NotificationsConfig, NotificationTransportKind
 
@@ -622,6 +647,7 @@ class Settings(BaseSettings):
             self.anthropic_api_key,
             self.telegram_bot_token,
             self.dashboard_auth_token,
+            self.crypto_news_api_token,
         ]
         return [c for c in candidates if c]
 

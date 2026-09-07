@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 
+from app.database import session_scope
+from app.models import PaperDecisionRecord, PaperTradingRunRecord
 from app.notifications.config import NotificationsConfig, NotificationTransportKind
 from app.notifications.models import ControlAction
 from app.notifications.notifier import Notifier
@@ -14,6 +19,7 @@ from app.paper import alerts
 from app.risk.kill_switch import KillSwitch
 from app.time_utils import utc_now
 from dashboard.app import create_app
+from dashboard.reads import _open_run_readonly
 from tests._p6_helpers import decision_now
 from tests._p9_helpers import APPROVE, build_paper
 
@@ -31,6 +37,31 @@ def test_dashboard_paper_views_read_only(tmp_path) -> None:
     # read views work; there is NO paper mutating endpoint (POST is not allowed)
     assert client.post("/api/paper/runs").status_code == 405
     assert client.post("/api/paper/portfolio", params={"run_id": run_id}).status_code == 405
+
+
+def test_dashboard_run_db_connection_is_enforced_read_only(tmp_path) -> None:
+    """The run-DB connection the dashboard opens is read-only at the SQLite level
+    (mode=ro): reads work (WAL concurrent read) but ANY write is rejected — the
+    dashboard can never mutate a P9 run DB even if a query tried to."""
+    runner, run_id, main_sf, _settings = build_paper(tmp_path, analyst_response=APPROVE)
+    runner.run_once(decision_now())  # sole writer creates + populates the run DB (WAL)
+
+    with session_scope(main_sf) as s:
+        catalog = s.get(PaperTradingRunRecord, run_id)
+        assert catalog is not None
+        db_path = catalog.db_path
+
+    ro_sf = _open_run_readonly(db_path)
+
+    # Reads keep working through the read-only connection.
+    with session_scope(ro_sf) as s:
+        decisions = s.scalars(select(PaperDecisionRecord)).all()
+    assert len(decisions) >= 1
+
+    # A write (schema-independent DDL probe) is blocked by the connection itself.
+    with pytest.raises(OperationalError, match="readonly"):
+        with session_scope(ro_sf) as s:
+            s.execute(text("CREATE TABLE _dashboard_write_probe (id INTEGER)"))
 
 
 def test_dashboard_only_two_mutations_are_stop_only(tmp_path) -> None:

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NON-ACTIVE launchd TEMPLATE for the Phase 9 paper-validation supervisor.
+
+  This file is an EXAMPLE only. It is NOT installed and NOT loaded. It starts NO
+  runtime. Do not treat its presence as a running service.
+
+  SECURITY: this template contains NO secrets and MUST stay that way. The app
+  reads credentials (e.g. ANTHROPIC_API_KEY) from the git-ignored `.env` in the
+  WorkingDirectory — NEVER from this plist. Do not add <key>EnvironmentVariables</key>
+  entries for API keys/tokens here.
+
+  To use it LATER (only when you intentionally start the validation window):
+    1. Copy to  ~/Library/LaunchAgents/com.aicryptotrader.paper.plist
+    2. Replace  <ABSOLUTE_REPO_PATH>  and  <RUN_ID>  (create a run id first with a
+       one-shot `python -m scripts.run_paper` and read it from the startup log).
+    3. Ensure `.env` in the repo has PAPER_VALIDATION_ENABLED=true and
+       LIVE_TRADING=false / PAPER_TRADING=false (fail-closed otherwise).
+    4. launchctl load  ~/Library/LaunchAgents/com.aicryptotrader.paper.plist
+    5. Stop cleanly with:  launchctl unload ~/Library/LaunchAgents/com.aicryptotrader.paper.plist
+       (delivers SIGTERM → the supervisor stops gracefully and releases ownership).
+
+  Restart-safety: `--supervise` decisions are idempotent per (decision_time, symbol)
+  and fills are guarded by intent_id, so a crash/restart never duplicates a
+  decision or fill. A hard crash leaves the run resumable via stale-heartbeat
+  takeover + released OS lock; the same --run-id resumes it.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aicryptotrader.paper</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string><ABSOLUTE_REPO_PATH>/.venv/bin/python</string>
+    <string>-m</string>
+    <string>scripts.run_paper</string>
+    <string>--run-id</string>
+    <string><RUN_ID></string>
+    <string>--supervise</string>
+  </array>
+
+  <!-- Repo root so the app finds `.env` (which holds the secrets, not this plist). -->
+  <key>WorkingDirectory</key>
+  <string><ABSOLUTE_REPO_PATH></string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart on crash, but NOT after a graceful stop (exit 0 via SIGTERM). -->
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- Avoid rapid respawn storms if it keeps crashing. -->
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <!-- Logs go under the git-ignored logs/ dir. No secrets are logged (redaction). -->
+  <key>StandardOutPath</key>
+  <string><ABSOLUTE_REPO_PATH>/logs/paper.supervise.out.log</string>
+  <key>StandardErrorPath</key>
+  <string><ABSOLUTE_REPO_PATH>/logs/paper.supervise.err.log</string>
+</dict>
+</plist>

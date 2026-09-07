@@ -25,6 +25,7 @@ class MarketDataSource(StrEnum):
 class NewsSource(StrEnum):
     FIXTURE = "fixture"  # offline (default)
     CRYPTOPANIC = "cryptopanic"  # real HTTP (documented provider); off by default
+    CRYPTO_NEWS_API = "cryptonewsapi"  # real HTTP (Crypto News API); Tier-2; off by default
 
 
 class AIProvider(StrEnum):

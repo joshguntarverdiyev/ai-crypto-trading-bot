@@ -42,9 +42,26 @@ fail-closed **false**; P9 runs ONLY when `PAPER_VALIDATION_ENABLED=true`.
   writability probe passes; otherwise the exit is **deferred, never fabricated** —
   the atomic tick rolls back, the position stays OPEN, and it is re-evaluated when
   the DB recovers (at-most-once durable effect via `intent_id`).
-- **News (§35.8):** the real CryptoPanic adapter is wrapped by a conservative
+- **News (§35.8):** the selected real news adapter is wrapped by a conservative
   settle-margin adapter (`PAPER_NEWS_SETTLE_SECONDS`, default 120) so near-boundary
   news is never over-admitted; the frozen `available_at <= decision_time` gate holds.
+- **News provider — Crypto News API (Tier-2 ingestion; `NEWS_SOURCE=cryptonewsapi`):**
+  a lightweight poller (`scripts/run_news_ingest`, 15-min cadence) fetches Crypto
+  News API and records each article's genuine `first_seen_at` + ingestion provenance
+  (provider, token-free request params, HTTP status, response hash, `fetched_at`)
+  into an **isolated** ingestion store (`NEWS_INGEST_DB_PATH`, its own SQLite file +
+  its own `DeclarativeBase` — the frozen operational schema is untouched). The P9
+  runner's decision-time read path (`IngestionStoreNewsAdapter`) reads that store
+  with **no boundary network I/O**, so no-look-ahead is defensible. Availability is
+  centralized in `SettleMarginNewsAdapter`:
+  `available_at = max(published_at + settle, first_seen_at)`. Provider `date`
+  (explicit US-Eastern offset, `-0400` EDT / `-0500` EST) is parsed to an aware
+  datetime → UTC (never naive→UTC; DST-correct); a missing offset / unparseable date
+  rejects the item (no fabricated timestamp). The API **token** is a dedicated secret
+  (`CRYPTO_NEWS_API_TOKEN`), config-only, never logged/committed/in provenance, and
+  every transport failure raises a token-free `NewsSourceError`. Dedup identity:
+  `news_id` → canonical-URL hash → deterministic fingerprint (never random).
+  Marketaux remains a drop-in future backup behind the same `NewsSource` interface.
 
 ## Accounting & metrics (§35.5, `app/paper/metrics.py`)
 - Authoritative equity/return series (total return, drawdown, Sharpe/Sortino/Calmar)
@@ -81,12 +98,49 @@ fail-closed **false**; P9 runs ONLY when `PAPER_VALIDATION_ENABLED=true`.
 ```
 # offline (fixture sources): safe, no network, no credentials
 PAPER_VALIDATION_ENABLED=true python -m scripts.run_paper
-# resume an existing run
+# resume an existing run (one sweep per invocation)
 python -m scripts.run_paper --run-id <id> --iterations 3
+# long-lived, boundary-aligned supervisor (stop with SIGTERM/SIGINT)
+python -m scripts.run_paper --run-id <id> --supervise
 ```
 Real sources (public/keyless CCXT OHLCV, CryptoPanic news, Anthropic advisory
 analyst) are enabled via config + the `[shadow]` extra; enabling them never enables
 trading and never requires a trading key.
+
+### Real-source dependencies (future, meaningful run)
+With the default `fixture` sources P9 runs fully offline but the analyst returns
+HOLD, so **no paper entry is ever taken and no evidence accrues** — a meaningful
+run needs the real (still keyless / advisory-only) sources. Their packages ship in
+the **`[shadow]` extra** (`pip install -e '.[shadow]'`): `ccxt` (public/keyless
+OHLCV), `httpx` (the CryptoPanic news transport used by `HttpNewsAdapter` — there is
+no `requests` dependency), and `anthropic` (advisory Claude). Then set
+`MARKET_DATA_SOURCE=ccxt` + `MARKET_DATA_EXCHANGE_ID=<public data-source id>`,
+`NEWS_SOURCE=cryptopanic`, `AI_PROVIDER=anthropic`, and supply `ANTHROPIC_API_KEY`
+**via `.env`/environment only** (never hardcoded, committed, logged, or placed in a
+prompt/config snapshot). CCXT stays public/keyless — no exchange API key/secret and
+no private trading API. The 120-second news settle margin
+(`PAPER_NEWS_SETTLE_SECONDS`) is preserved by `SettleMarginNewsAdapter`.
+
+### Long-run supervision (macOS; NOT active by default)
+For a months-long window, run the **self-scheduling supervisor**
+(`--supervise` → `PaperRunner.run()`), which sleeps to each completed 1h boundary
+and never advances past real time. Two supported patterns:
+- **launchd `KeepAlive` (recommended):** a long-lived `--supervise` process,
+  restarted on crash but not after a clean stop. A **non-active template** lives at
+  `deploy/launchd/com.aicryptotrader.paper.plist.example` (it is not installed and
+  starts nothing; it holds **no secrets** — the app reads `.env` from the
+  `WorkingDirectory`). `launchctl unload` delivers SIGTERM → the supervisor stops
+  gracefully and releases ownership so the next start resumes instantly.
+- **cron / `StartInterval` hourly:** invoke the one-sweep form
+  `python -m scripts.run_paper --run-id <id>` once per hour (no `--supervise`).
+  Heartbeat then refreshes hourly instead of continuously.
+
+Both are **restart-safe and idempotent**: decisions are keyed on
+`(decision_time, symbol)` and fills on `intent_id`, so a crash/restart can never
+create a duplicate decision or fill. A hard crash (SIGKILL) leaves the run
+resumable via the stale-heartbeat takeover + released OS lock under the same
+`--run-id`. Process-manager install, log rotation, and run-DB backup are
+operational choices deferred to when the window is actually started.
 
 **Implementation ≠ validation:** a passing implementation does not mean the 3+ month
 validation has passed. After implementation, P9 must actually operate for the

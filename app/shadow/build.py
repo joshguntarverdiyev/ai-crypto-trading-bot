@@ -59,6 +59,15 @@ def _market_adapter(settings: Settings, cfg: ShadowConfig) -> ExchangeAdapter:
 
 
 def _news_adapter(settings: Settings, cfg: ShadowConfig) -> NewsSourceAdapter:
+    if cfg.news_source is NewsSource.CRYPTO_NEWS_API:
+        # Store-backed read (no network at the boundary); populated by the poller.
+        from app.news.cryptonews_adapter import IngestionStoreNewsAdapter
+        from app.news.ingestion import make_news_ingest_store
+
+        store = make_news_ingest_store(settings.news_ingest_db_path)
+        return IngestionStoreNewsAdapter(
+            store, lookback_hours=settings.crypto_news_lookback_hours
+        )
     if cfg.news_source is NewsSource.CRYPTOPANIC:
         from app.news.http_adapter import HttpNewsAdapter
 
