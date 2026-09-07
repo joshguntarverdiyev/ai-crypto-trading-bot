@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from app.indicators.config import IndicatorConfig
     from app.news.config import NewsConfig
     from app.notifications.config import NotificationsConfig
+    from app.paper.config import PaperValidationConfig
     from app.regime.config import RegimeConfig
     from app.risk.config import RiskConfig
     from app.shadow.config import ShadowConfig
@@ -214,6 +215,32 @@ class Settings(BaseSettings):
     shadow_backfill_boundaries: int = 0  # 0 → only latest completed boundary
     shadow_clock_drift_seconds: int = 60  # exchange-vs-local drift → PAUSE
 
+    # --- paper validation (Phase 9) — evolving paper account; NO real trading ---
+    # Dedicated fail-closed enable flag. P9 runs ONLY when this is True AND
+    # live_trading/paper_trading remain False (enforced in app/paper/build.py).
+    # This flag never implies or mutates live_trading/paper_trading (§35.15).
+    # Data/news/AI source selection reuses the shared selectors above
+    # (market_data_source / news_source / ai_provider / market_data_exchange_id).
+    paper_validation_enabled: bool = False
+    paper_runs_dir: str = "data/paper_runs"  # per-run DB files (D-ISO)
+    paper_primary_timeframe: str = "1h"
+    paper_confirm_timeframe: str = "4h"
+    paper_warmup_buffer_candles: int = 100
+    paper_max_consecutive_data_failures: int = 3  # → PAUSE
+    paper_clock_drift_seconds: int = 60  # → PAUSE
+    paper_news_settle_seconds: int = 120  # conservative availability margin (§35.8)
+    paper_owner_stale_intervals: int = 3  # heartbeat staleness (boundaries) → takeover
+    # Validation gate thresholds (objective; pre-registered per run — §35.4/§35.9).
+    paper_min_operational_days: int = 90
+    paper_min_uptime_fraction: float = 0.98
+    paper_max_unexplained_gaps: int = 24
+    paper_min_meaningful_trades: int = 100
+    paper_min_trades_per_regime_cell: int = 15
+    paper_rolling_buckets: int = 3
+    paper_concentration_top_k: int = 3
+    paper_mc_max_drawdown_ceiling: float = 0.25
+    paper_seed: int = 12345
+
     @field_validator("log_level")
     @classmethod
     def _validate_log_level(cls, value: str) -> str:
@@ -360,6 +387,15 @@ class Settings(BaseSettings):
         # ShadowConfig.__post_init__ is the source-of-truth for the rest (incl. the
         # ccxt-requires-exchange-id fail-closed rule and timeframe validity).
         self.shadow_config()
+        return self
+
+    @model_validator(mode="after")
+    def _validate_paper_validation_params(self) -> Settings:
+        # PaperValidationConfig.__post_init__ is the source-of-truth for invariants
+        # (timeframe validity, ccxt-requires-exchange-id, gate thresholds). Building
+        # it here surfaces any violation as a fail-closed ConfigError at load time.
+        # (Source-selector enum membership is already checked by _validate_shadow_params.)
+        self.paper_validation_config()
         return self
 
     def indicator_config(self) -> IndicatorConfig:
@@ -523,6 +559,37 @@ class Settings(BaseSettings):
             market_data_exchange_id=self.market_data_exchange_id,
             news_source=NewsSource(self.news_source),
             ai_provider=AIProvider(self.ai_provider),
+        )
+
+    def paper_validation_config(self) -> PaperValidationConfig:
+        from app.market_data.models import Symbol, Timeframe
+        from app.paper.config import PaperValidationConfig
+        from app.shadow.config import AIProvider, MarketDataSource, NewsSource
+
+        return PaperValidationConfig(
+            symbols=tuple(Symbol.parse(s) for s in self.market_symbols),
+            primary_timeframe=Timeframe(self.paper_primary_timeframe),
+            confirm_timeframe=Timeframe(self.paper_confirm_timeframe),
+            starting_equity=self.paper_starting_equity,
+            warmup_buffer_candles=self.paper_warmup_buffer_candles,
+            max_consecutive_data_failures=self.paper_max_consecutive_data_failures,
+            clock_drift_seconds=self.paper_clock_drift_seconds,
+            news_settle_seconds=self.paper_news_settle_seconds,
+            owner_stale_intervals=self.paper_owner_stale_intervals,
+            paper_runs_dir=self.paper_runs_dir,
+            market_data_source=MarketDataSource(self.market_data_source),
+            market_data_exchange_id=self.market_data_exchange_id,
+            news_source=NewsSource(self.news_source),
+            ai_provider=AIProvider(self.ai_provider),
+            min_operational_days=self.paper_min_operational_days,
+            min_uptime_fraction=self.paper_min_uptime_fraction,
+            max_unexplained_gaps=self.paper_max_unexplained_gaps,
+            min_meaningful_trades=self.paper_min_meaningful_trades,
+            min_trades_per_regime_cell=self.paper_min_trades_per_regime_cell,
+            rolling_buckets=self.paper_rolling_buckets,
+            concentration_top_k=self.paper_concentration_top_k,
+            mc_max_drawdown_ceiling=self.paper_mc_max_drawdown_ceiling,
+            seed=self.paper_seed,
         )
 
     def notifications_config(self) -> NotificationsConfig:

@@ -7,21 +7,24 @@ tables; NO writes here (Master Plan §17 / plan §23).
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.database import session_scope
+from app.database import make_engine, make_session_factory, session_scope
 from app.models import (
     KILL_SWITCH_ROW_ID,
     BacktestRunRecord,
     ClaudeDecisionRecord,
     KillSwitchRecord,
     NewsRecord,
+    PaperDecisionRecord,
     PaperFillRecord,
     PaperOrderRecord,
+    PaperTradingRunRecord,
     PortfolioSnapshotRecord,
     PositionRecord,
     RiskDecisionRecord,
@@ -238,4 +241,129 @@ def status_overview(sf: sessionmaker[Session]) -> dict[str, Any]:
         "portfolio": latest_portfolio(sf),
         "open_positions": open_positions(sf),
         "data_freshness": {"latest_snapshot": (latest_portfolio(sf) or {}).get("snapshot_time")},
+    }
+
+
+# --- Phase 9 paper-validation views (per-run DB isolation; read-only) ---------
+# ``sf`` here is the MAIN (catalog) session factory. Per-run operational state is
+# read from each run's OWN database, opened read-only from the catalog db_path.
+# There is NO cross-run aggregation (§26.6) and NO trade authority.
+def paper_runs(sf: sessionmaker[Session], limit: int = 25) -> list[dict[str, Any]]:
+    with session_scope(sf) as session:
+        rows = session.scalars(
+            select(PaperTradingRunRecord)
+            .order_by(PaperTradingRunRecord.run_time.desc()).limit(limit)
+        ).all()
+        return [
+            {
+                "run_id": r.id, "status": r.status, "run_time": _s(r.run_time),
+                "stopped_at": _s(r.stopped_at), "heartbeat_at": _s(r.heartbeat_at),
+                "symbols": json.loads(r.symbols), "starting_equity": _s(r.starting_equity),
+                "market_data_source": r.market_data_source, "news_source": r.news_source,
+                "ai_provider": r.ai_provider, "engine_version": r.engine_version,
+                "prereg_digest": r.prereg_digest,
+            }
+            for r in rows
+        ]
+
+
+def _catalog_row(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | None:
+    with session_scope(sf) as session:
+        r = session.get(PaperTradingRunRecord, run_id)
+        if r is None:
+            return None
+        return {
+            "run_id": r.id, "db_path": r.db_path, "status": r.status,
+            "heartbeat_at": _s(r.heartbeat_at), "starting_equity": r.starting_equity,
+            "timeframes": json.loads(r.timeframes),
+        }
+
+
+def _open_run_readonly(db_path: str) -> sessionmaker[Session]:
+    """Open a run's OWN database for READ-ONLY use (dashboard issues SELECTs only;
+    the runner is the sole writer and WAL allows concurrent reads)."""
+    return make_session_factory(make_engine(f"sqlite:///{db_path}"))
+
+
+def _tf_seconds(timeframe: str) -> int:
+    from app.market_data.models import Timeframe
+
+    return Timeframe(timeframe).seconds
+
+
+def paper_portfolio(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | None:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return None
+    return latest_portfolio(_open_run_readonly(cat["db_path"]))
+
+
+def paper_positions(sf: sessionmaker[Session], run_id: str) -> list[dict[str, Any]]:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return []
+    return open_positions(_open_run_readonly(cat["db_path"]))
+
+
+def paper_decisions(
+    sf: sessionmaker[Session], run_id: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return []
+    run_sf = _open_run_readonly(cat["db_path"])
+    with session_scope(run_sf) as session:
+        rows = session.scalars(
+            select(PaperDecisionRecord)
+            .order_by(PaperDecisionRecord.decision_time.desc()).limit(limit)
+        ).all()
+        return [
+            {
+                "decision_time": _s(r.decision_time), "symbol": r.symbol, "outcome": r.outcome,
+                "stage": r.stage, "reason": r.reason, "regime": r.regime,
+                "equity_after": _s(r.equity_after), "exposure_after_pct": r.exposure_after_pct,
+                "paper_run_id": r.paper_run_id, "intent_id": r.intent_id,
+            }
+            for r in rows
+        ]
+
+
+def paper_equity_curve(sf: sessionmaker[Session], run_id: str) -> list[dict[str, Any]]:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return []
+    from app.paper.metrics import equity_curve
+
+    tf = _tf_seconds(cat["timeframes"][0])
+    curve = equity_curve(_open_run_readonly(cat["db_path"]), primary_tf_seconds=tf)
+    return [{"equity": _s(p.equity)} for p in curve]
+
+
+def paper_metrics(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | None:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return None
+    from app.paper.metrics import build_view, duration_stats
+    from backtesting.metrics import compute_metrics
+
+    run_sf = _open_run_readonly(cat["db_path"])
+    tf = _tf_seconds(cat["timeframes"][0])
+    view = build_view(run_sf, starting_equity=cat["starting_equity"], primary_tf_seconds=tf)
+    m = compute_metrics(view)  # type: ignore[arg-type]  # PaperResultView duck-typed (§35.5)
+    dur = duration_stats(run_sf, primary_tf_seconds=tf)
+    return {"metrics": m.to_dict(), "duration": dur.__dict__}
+
+
+def paper_health(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | None:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return None
+    run_sf = _open_run_readonly(cat["db_path"])
+    with session_scope(run_sf) as session:
+        last = session.scalars(select(func.max(PaperDecisionRecord.decision_time))).first()
+        total = session.scalar(select(func.count()).select_from(PaperDecisionRecord)) or 0
+    return {
+        "run_id": run_id, "status": cat["status"], "heartbeat_at": cat["heartbeat_at"],
+        "last_decision_time": _s(last), "decision_count": total,
+        "kill_switch": kill_switch_state(run_sf),
     }

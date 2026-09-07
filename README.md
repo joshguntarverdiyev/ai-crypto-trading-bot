@@ -7,9 +7,9 @@ whether a durable net trading edge exists at all.
 
 > **No profit is claimed or guaranteed. This is not production trading software.**
 
-## Current status: Phase 8 — Shadow Mode
+## Current status: Phase 9 — Paper Validation (implemented; runtime validation not started)
 
-Phases 0–8 are complete: the software foundation (P0), market data (P1),
+Phases 0–9 are complete: the software foundation (P0), market data (P1),
 indicators + regime (P2), the cost gate (P3), the candidate generator +
 advisory sizing (P4), the advisory news + Claude analyst (P5), the deterministic
 **RiskManager (final authority)** + paper engine + persistence (P6), the offline
@@ -27,6 +27,20 @@ research + observability tooling (P7), and now **Shadow Mode** (P8):
 * shadow-only audit (`shadow_decisions`/`shadow_runs`), read-only dashboard shadow
   views, and Telegram shadow alerts — none of which can place, size, or modify a
   trade.
+
+And **Phase 9 — Paper Validation** (`app/paper/`): the same real-time P1→P6
+pipeline (real/current market data + real news + **advisory** Claude +
+deterministic **RiskManager** + pure `PaperBroker`) but driving an **evolving paper
+portfolio** — accumulating positions, P&L, drawdown, and an equity curve across
+boundaries — with **still zero real orders and no trading credentials**. Each run is
+isolated in its **own SQLite database** (a MAIN-DB catalog tracks runs/ownership);
+protective stop/target exits continue while HALTED (a DB-failure defers, never
+fabricates, an exit); the objective, **pre-registered** validation gates and the
+evidence set reuse the P7 pure-Python tooling. P9 runs only when
+`PAPER_VALIDATION_ENABLED=true` while `LIVE_TRADING`/`PAPER_TRADING` stay false.
+**Implementation ≠ runtime validation:** the months-long evidence collection has
+**not** started; statistical evidence, strategy profitability, and live readiness
+remain **unestablished**.
 
 The Phase 7 research + observability tooling:
 
@@ -126,6 +140,19 @@ pip install -e ".[shadow]"            # ccxt (public/keyless), httpx (news), ant
 Shadow Mode runs the real-time decision pipeline with **zero execution** and
 records shadow decisions only. It never places an order or changes portfolio state.
 
+## Run Paper Validation (offline by default; simulated, no real orders)
+
+```bash
+PAPER_VALIDATION_ENABLED=true python -m scripts.run_paper   # fixture sources → fully offline
+python -m scripts.run_paper --run-id <id> --iterations 3    # resume an existing run
+```
+
+Paper Validation drives an **evolving paper portfolio** through the frozen P1→P6
+pipeline. It runs only when `PAPER_VALIDATION_ENABLED=true` and `LIVE_TRADING`/
+`PAPER_TRADING` are false (fail-closed otherwise). Each run uses its own isolated
+SQLite database under `PAPER_RUNS_DIR`. It places **no real orders** and needs **no
+trading credentials**. See `docs/phase-9.md`.
+
 ## Run the read-only dashboard (optional deps)
 
 ```bash
@@ -153,12 +180,13 @@ app/            application package
   sizing/ execution/ portfolio/ engine/          implemented (P1–P6)
   notifications/  Telegram alerts + stop-only controls (P7)
   shadow/         Shadow Mode: real-time pipeline, zero execution (P8)
+  paper/          Paper Validation: evolving paper portfolio, zero real orders (P9)
   tax/            future-phase package — intentionally empty (P10)
 backtesting/    pure-quant backtest engine + metrics/robustness/walk-forward (P7)
 dashboard/      read-only FastAPI dashboard + stop-only controls (P7/P8 views)
-scripts/        init_db, run_backtest, run_dashboard, run_shadow, dev scripts
+scripts/        init_db, run_backtest, run_dashboard, run_shadow, run_paper, dev scripts
 tests/          pytest suite (offline, deterministic)
-docs/           architecture, development, security, phase-0..7
+docs/           architecture, development, security, phase-0..9
 data/ logs/     local (git-ignored) runtime artifacts + backtest outputs
 ```
 

@@ -22,6 +22,8 @@ from app.models.error_record import ErrorRecord
 from app.models.kill_switch import KILL_SWITCH_ROW_ID, KillSwitchRecord
 from app.models.news_record import NewsRecord
 from app.models.paper import PaperFillRecord, PaperOrderRecord
+from app.models.paper_decision import PaperDecisionRecord
+from app.models.paper_run import PaperTradingRunRecord
 from app.models.portfolio import PortfolioSnapshotRecord, PositionRecord
 from app.models.shadow import ShadowDecisionRecord, ShadowRunRecord
 from app.models.system_event import SystemEvent
@@ -50,4 +52,7 @@ __all__ = [
     # Phase 8 — shadow-mode audit (shadow-only, not operational)
     "ShadowDecisionRecord",
     "ShadowRunRecord",
+    # Phase 9 — paper-validation run catalog (main DB) + per-run decision audit (run DB)
+    "PaperTradingRunRecord",
+    "PaperDecisionRecord",
 ]

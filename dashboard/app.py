@@ -109,6 +109,35 @@ def create_app(
     def shadow_runs(limit: int = 25) -> list[dict[str, object]]:
         return reads.recent_shadow_runs(sf, limit)
 
+    # --- Phase 9 paper-validation read views (per-run DB; read-only) ---
+    @app.get("/api/paper/runs")
+    def paper_runs(limit: int = 25) -> list[dict[str, object]]:
+        return reads.paper_runs(sf, limit)
+
+    @app.get("/api/paper/portfolio")
+    def paper_portfolio(run_id: str) -> dict[str, object] | None:
+        return reads.paper_portfolio(sf, run_id)
+
+    @app.get("/api/paper/positions")
+    def paper_positions(run_id: str) -> list[dict[str, object]]:
+        return reads.paper_positions(sf, run_id)
+
+    @app.get("/api/paper/decisions")
+    def paper_decisions(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_decisions(sf, run_id, limit)
+
+    @app.get("/api/paper/equity_curve")
+    def paper_equity_curve(run_id: str) -> list[dict[str, object]]:
+        return reads.paper_equity_curve(sf, run_id)
+
+    @app.get("/api/paper/metrics")
+    def paper_metrics(run_id: str) -> dict[str, object] | None:
+        return reads.paper_metrics(sf, run_id)
+
+    @app.get("/api/paper/health")
+    def paper_health(run_id: str) -> dict[str, object] | None:
+        return reads.paper_health(sf, run_id)
+
     # --- the ONLY two mutating endpoints (stop-direction only) ---
     @app.post("/control/pause")
     def control_pause(body: ControlRequest, _: None = Depends(guard)) -> dict[str, object]:

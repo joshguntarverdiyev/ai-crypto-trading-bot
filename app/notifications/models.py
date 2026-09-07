@@ -22,6 +22,13 @@ class AlertKind(StrEnum):
     DATA_STALE = "data_stale"  # data-freshness/staleness alert
     INFO = "info"  # generic operational note
     SHADOW_WOULD_TRADE = "shadow_would_trade"  # Phase 8: a HYPOTHETICAL would-be trade
+    # Phase 9 — paper validation (evolving paper account; NO real trading)
+    PAPER_ENTRY = "paper_entry"  # a paper entry was executed into the evolving book
+    PAPER_EXIT = "paper_exit"  # a paper stop/target exit was executed
+    PAPER_RESTART = "paper_restart"  # the paper runner (re)started / took over a run
+    PAPER_RECOVERY = "paper_recovery"  # data/DB recovered after a failure streak
+    PAPER_DRAWDOWN = "paper_drawdown"  # significant drawdown threshold crossed
+    PAPER_HEARTBEAT = "paper_heartbeat"  # periodic liveness heartbeat
 
 
 @dataclass(frozen=True)

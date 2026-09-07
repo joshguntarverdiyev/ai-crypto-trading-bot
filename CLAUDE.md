@@ -21,6 +21,33 @@ authoritative.
 
 ## Current phase
 
+**Phase 9 — Paper Validation (COMPLETE; runtime validation NOT started).** Phase
+0–8 + an **evolving paper-trading account** (`app/paper/`) that drives the EXACT,
+unmodified frozen P6 `TradingEngine` (real `PortfolioStore`/`ledger`/atomic
+persistence) over the same real-time P1→P6 pipeline against real/current market
+data, real news, and the **advisory** Claude analyst, with the deterministic
+**RiskManager as final authority** and fills only via the **pure `PaperBroker`** —
+**zero real orders, no exchange trading/withdrawal credentials, no reachable live
+path.** Runs ONLY when `paper_validation_enabled` is true while
+`LIVE_TRADING`/`PAPER_TRADING` stay fail-closed false. **Per-run database isolation
+(D-ISO):** each run has its OWN SQLite file (operational tables + `paper_decisions`
+audit); the MAIN DB holds only the `paper_trading_runs` catalog (no cross-DB FK; no
+`paper_run_id` columns on frozen P6 tables; disjoint `intent_id` namespaces).
+Single-writer via an OS file lock + catalog `owner_token`/`heartbeat_at` (crash
+takeover); a missing/mismatched run identity fails closed and a known run DB is
+never silently recreated. The ONLY frozen-code change is two additive,
+default-preserving `TradingEngine` extensions: `run_protective_exits` (protective
+stop/target exits continue while HALTED; new entries never do) and an optional
+`marks=None` (byte-identical to P6 when unused; full marks value the whole book).
+A DB failure during a HALTED protective exit is **deferred, never fabricated**
+(atomic rollback ⇒ position stays open, retried on recovery). Shadow Mode is
+unchanged and its flat per-tick account is **not** grown into a book (P8 and P9 are
+separate packages). Objective, **pre-registered** validation gates + the evidence
+set reuse the P7 pure-Python tooling. **Implementation ≠ runtime validation:** the
+months-long evidence collection has **not** started; statistical evidence, strategy
+profitability, and live readiness remain **unestablished**; **paper ≠ live**;
+profitability is never claimed.
+
 **Phase 8 — Shadow Mode (COMPLETE).** Phase 0–7 + a **real-time decision pipeline
 with ZERO execution** (`app/shadow/`): it runs the EXACT, unmodified P1→P6
 contracts (market data → features → regime → strategy → cost gate → news → Claude
@@ -82,7 +109,7 @@ per-tick persistence with an independent-session kill-switch HALT. `LIVE_TRADING
 stays false; offline/simulated only; **paper ≠ live performance**. Claude remains
 advisory and can never override the RiskManager.
 
-## Allowed scope (Phase 0–8)
+## Allowed scope (Phase 0–9)
 
 Config, database, models, logging, errors, time/ID utilities, offline bootstrap,
 tests, docs, tooling **+ (P1)** exchange-agnostic market-data (canonical
@@ -120,14 +147,24 @@ views + Telegram shadow alerts — plus **real adapters** behind the frozen P1/P
 interfaces (CCXT public/keyless OHLCV, CryptoPanic news, Anthropic analyst),
 OFF by default, lazily imported, never exercised offline, no trading credentials;
 `LIVE_TRADING`/`PAPER_TRADING` stay fail-closed false; no operational/portfolio
-writes; profitability is not a P8 exit criterion.
+writes; profitability is not a P8 exit criterion **+ (P9)** Paper Validation
+(`app/paper/`): the **evolving paper portfolio** over the frozen P1→P6
+`TradingEngine` — per-run SQLite database isolation + a `paper_trading_runs` MAIN-DB
+catalog + `paper_decisions`, single-writer ownership (file lock + heartbeat),
+protective exits while HALTED (additive `run_protective_exits`) + optional
+multi-symbol `marks`, DB-failure-fail-closed deferral, a conservative news settle
+margin, and objective **pre-registered** validation gates reusing the P7 evidence
+tooling — **zero real orders**, `paper_validation_enabled`-gated, with
+`LIVE_TRADING`/`PAPER_TRADING` fail-closed false and no frozen operational-table
+schema change (only the two additive `TradingEngine` OD-1/OD-2 extensions).
 
 ## Forbidden scope (do NOT implement without an explicit next-phase prompt)
 
-**P9 Paper Validation runtime** — an evolving operational paper portfolio,
-accumulated hypothetical PnL, carried virtual positions, `paper_trading_runs`, or
-rolling statistical/regime validation (Shadow Mode's flat per-tick account must
-**not** grow into a book) · **live trading (`LIVE_TRADING` stays false) /
+The **P9 runtime validation itself** (starting the months-long paper run, tuning
+gates on results, or treating its output as an edge/live-readiness claim) is
+operational, not an implementation task — do not initiate it here. Shadow Mode's
+flat per-tick account must **not** be grown into a book (P8 stays flat; P9 is a
+separate package). · **live trading (`LIVE_TRADING` stays false) /
 `PAPER_TRADING` true / real-money trading / real order execution / real-exchange
 reconciliation / `clientOrderId` to a venue / exchange-native stops /
 authenticated (trading) API keys or withdrawal-enabled keys** · **WebSocket /

@@ -15,6 +15,7 @@ honored and persisted independently (H9).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -123,9 +124,31 @@ class TradingEngine:
         )
         return state, md1, f1, f4
 
-    # --- exits (run even while PAUSED) ----------------------------------
+    # --- multi-symbol marks (P9 OD-2; default None ⇒ frozen single-symbol behavior)
+    @staticmethod
+    def _marks_for(
+        symbol: Symbol, own_mark: Decimal, marks: Mapping[str, Decimal] | None
+    ) -> dict[str, Decimal]:
+        """Marks for equity valuation.
+
+        With ``marks=None`` this returns ``{str(symbol): own_mark}`` — byte-identical
+        to the frozen P6 single-symbol behavior. With P9 full marks provided, all open
+        symbols are valued at their decision-time closes; the current symbol's own
+        decision-time close (``own_mark``) always takes precedence for consistency.
+        """
+        if not marks:
+            return {str(symbol): own_mark}
+        return {**marks, str(symbol): own_mark}
+
+    # --- exits (run even while PAUSED; and while HALTED via run_protective_exits) ---
     def _try_exit(
-        self, symbol: Symbol, md1, *, decision_time: datetime, now: datetime
+        self,
+        symbol: Symbol,
+        md1,
+        *,
+        decision_time: datetime,
+        now: datetime,
+        marks: Mapping[str, Decimal] | None = None,
     ) -> TickResult | None:
         account = self._pf.load_account()
         position = account.position_for(symbol)
@@ -148,14 +171,48 @@ class TradingEngine:
             account, symbol=symbol, exit_qty=fill.fill_qty,
             fill_price=fill.fill_price, fee=fill.fee, at=now,
         )
-        equity = new_account.equity({str(symbol): candle.close})
+        marks_after = self._marks_for(symbol, candle.close, marks)
+        equity = new_account.equity(marks_after)
         new_account = ledger.with_hwm(new_account, equity)
         self._persist(
             decision_time=decision_time, now=now, symbol=symbol, intent=intent,
             exec_result=result, affected_position=affected, account_after=new_account,
-            equity=equity, unrealized=new_account.unrealized_pnl({str(symbol): candle.close}),
+            equity=equity, unrealized=new_account.unrealized_pnl(marks_after),
         )
         return TickResult(TickOutcome.EXIT, "exit", intent.order_type.value, symbol)
+
+    # --- protective exits while HALTED (P9 OD-1) -------------------------
+    def run_protective_exits(
+        self,
+        *,
+        decision_time: datetime,
+        now: datetime,
+        symbol: Symbol,
+        marks: Mapping[str, Decimal] | None = None,
+    ) -> TickResult:
+        """Run ONLY stop/target exits for ``symbol`` regardless of kill state.
+
+        Additive P9 entry point (OD-1): the P9 runner routes to this while the kill
+        switch is HALTED so protective exits keep firing (a HALT must never leave an
+        open paper position unmanaged), while **new entries are never created**. It
+        reuses the exact frozen ``_try_exit`` path — no duplication, no reordering —
+        and does not touch ``process_tick``'s behavior. On market-data failure it
+        HALTs (already-HALTED is a no-op) and returns ERROR; a persistence failure in
+        the exit path rolls back atomically (no phantom fill) and re-raises.
+        """
+        if now < decision_time:
+            return TickResult(
+                TickOutcome.HOLD, "time_integrity", "now_before_decision_time", symbol
+            )
+        try:
+            _market, md1, _f1, _f4 = self._market(symbol, decision_time=decision_time)
+        except Exception:
+            self._kill.halt("market_data_failure", now)
+            return TickResult(TickOutcome.ERROR, "market_data", "halted", symbol)
+        result = self._try_exit(symbol, md1, decision_time=decision_time, now=now, marks=marks)
+        if result is not None:
+            return result
+        return TickResult(TickOutcome.HOLD, "protective_exit", "no_exit", symbol)
 
     def _persist(self, *, now: datetime, **kw) -> None:
         try:
@@ -166,10 +223,20 @@ class TradingEngine:
 
     # --- main tick -------------------------------------------------------
     def process_tick(
-        self, *, decision_time: datetime, now: datetime, symbol: Symbol
+        self,
+        *,
+        decision_time: datetime,
+        now: datetime,
+        symbol: Symbol,
+        marks: Mapping[str, Decimal] | None = None,
     ) -> TickResult:
         # H58 invariant: audit/ingestion time cannot precede the decision moment.
         # Violation is a caller/time-integrity error → fail closed (no trade).
+        #
+        # ``marks`` (P9 OD-2) is an OPTIONAL full symbol→decision-time-close map so
+        # equity/unrealized/HWM/drawdown and the RiskManager's drawdown/daily/weekly
+        # checks value the WHOLE book. When ``marks=None`` the behavior is
+        # byte-identical to the frozen P6 single-symbol valuation.
         if now < decision_time:
             return TickResult(
                 TickOutcome.HOLD, "time_integrity", "now_before_decision_time", symbol
@@ -186,7 +253,7 @@ class TradingEngine:
             return TickResult(TickOutcome.ERROR, "market_data", "halted", symbol)
 
         # Exits first (honored during PAUSE too).
-        exit_result = self._try_exit(symbol, md1, decision_time=decision_time, now=now)
+        exit_result = self._try_exit(symbol, md1, decision_time=decision_time, now=now, marks=marks)
         if exit_result is not None:
             return exit_result
 
@@ -216,7 +283,8 @@ class TradingEngine:
             return TickResult(TickOutcome.HOLD, "analyst", verdict.failure.value, symbol)
 
         account = self._pf.load_account()
-        equity = account.equity({str(symbol): market.last_close})
+        marks_now = self._marks_for(symbol, market.last_close, marks)
+        equity = account.equity(marks_now)
         sizing = self._sizer.plan(
             candidate, account_equity=equity, current_exposures=account.exposure_by_symbol()
         )
@@ -280,12 +348,12 @@ class TradingEngine:
             stop_price=plan.stop_price, target_price=Decimal(str(candidate.target_price)),
             strategy_version=candidate.strategy_version, at=now,
         )
-        equity_after = new_account.equity({str(symbol): market.last_close})
+        equity_after = new_account.equity(marks_now)
         new_account = ledger.with_hwm(new_account, equity_after)
         self._persist(
             decision_time=decision_time, now=now, symbol=symbol, news_items=news.items,
             verdict=verdict, risk_assessment=assessment, intent=intent, exec_result=result,
             affected_position=affected, account_after=new_account, equity=equity_after,
-            unrealized=new_account.unrealized_pnl({str(symbol): market.last_close}),
+            unrealized=new_account.unrealized_pnl(marks_now),
         )
         return TickResult(TickOutcome.TRADE, "execution", "filled", symbol)

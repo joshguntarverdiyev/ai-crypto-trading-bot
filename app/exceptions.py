@@ -88,3 +88,12 @@ class AIUnavailableError(AIError):
 
 class AITimeoutError(AIError):
     """The analyst provider timed out (never a permissive result → HOLD)."""
+
+
+# --- Phase 9: paper-validation run errors ---
+# Fail-closed run lifecycle/ownership/identity problems (never a permissive result).
+
+
+class PaperRunError(AppError):
+    """A paper-validation run cannot be started/resumed safely (ownership, run
+    identity, missing/corrupt run DB, or catalog write failure). Fail-closed."""
