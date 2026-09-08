@@ -120,22 +120,12 @@ def load_frozen_universe(
     return symbols, hashes.pop()
 
 
-def build_and_persist_universe(
-    run_sf: sessionmaker[Session],
-    run_id: str,
-    *,
-    provider: MarketUniverseProvider,
-    cfg: PaperValidationConfig,
-    now: datetime,
-    history_ok: dict[str, bool] | None = None,
-) -> UniverseSelection:
-    """Snapshot → select → (optional history screen) → persist. Returns the final
-    selection (its ``selection_hash`` is pre-registrable and fixed for the window)."""
-    snapshot = provider.snapshot()
-    selection = select_universe(snapshot, cfg.universe_config())
-    if history_ok is not None:
-        selection = apply_history_screen(selection, history_ok)
-
+def persist_universe(
+    run_sf: sessionmaker[Session], run_id: str, selection: UniverseSelection, now: datetime
+) -> None:
+    """Persist THIS EXACT frozen ``selection`` into the run's own DB (``paper_universe``)
+    keyed by ``run_id`` + ``selection_hash``. Does NOT re-snapshot or re-select — the
+    single T0 Selection is the one persisted (single source of truth)."""
     with session_scope(run_sf) as session:
         for rank, m in enumerate(selection.ranked):
             session.add(
@@ -148,4 +138,85 @@ def build_and_persist_universe(
                     selected_at=now,
                 )
             )
+
+
+def select_frozen_universe(
+    settings,  # noqa: ANN001 (Settings; annotated lazily to avoid an import cycle)
+    cfg: PaperValidationConfig,
+    *,
+    now: datetime,
+    provider: MarketUniverseProvider | None = None,
+    market_service=None,  # noqa: ANN001
+    market_adapter=None,  # noqa: ANN001
+) -> UniverseSelection:
+    """Perform the authoritative T0 selection EXACTLY ONCE: snapshot (universe
+    provider) → deterministic select → frozen P1 history screen → apply. Returns the
+    FROZEN ``UniverseSelection`` (the object to persist AND pass to
+    ``build_paper_system``). Fail-closed (``PaperRunError``) on snapshot failure,
+    empty eligible universe, history-screen failure, or empty-after-screen. Real
+    CCXT provider/adapter are lazily built only when not injected (tests inject
+    offline fixtures; no network offline)."""
+    if provider is None:
+        from app.universe.ccxt_provider import CcxtUniverseProvider
+
+        provider = CcxtUniverseProvider(exchange_id=cfg.universe_exchange_id)
+    try:
+        snapshot = provider.snapshot()
+    except Exception as exc:  # Binance public snapshot failure → fail-closed
+        raise PaperRunError(f"T0 market snapshot failed (fail-closed): {exc}") from None
+
+    selection = select_universe(snapshot, cfg.universe_config())
+    if not selection.symbols:
+        raise PaperRunError("empty eligible universe at T0 (fail-closed; no .env fallback).")
+
+    if market_adapter is None:
+        from app.market_data.ccxt_adapter import CcxtMarketDataAdapter
+
+        market_adapter = CcxtMarketDataAdapter(
+            exchange_id=cfg.market_data_exchange_id or cfg.universe_exchange_id,
+            symbols=list(selection.symbols),
+            timeframes=[cfg.primary_timeframe, cfg.confirm_timeframe],
+        )
+    if market_service is None:
+        from app.market_data.service import MarketDataService
+
+        market_service = MarketDataService()
+
+    from app.indicators.config import IndicatorConfig
+
+    warmup = cfg.warmup_min(
+        settings.indicator_config().min_history if hasattr(settings, "indicator_config")
+        else IndicatorConfig().min_history
+    )
+    history_ok = screen_history_via_market(
+        list(selection.symbols), market_service=market_service, adapter=market_adapter,
+        primary_tf=cfg.primary_timeframe, confirm_tf=cfg.confirm_timeframe,
+        warmup_min=warmup, now=now,
+    )
+    frozen = apply_history_screen(selection, history_ok)
+    if not frozen.symbols:
+        raise PaperRunError(
+            "empty universe after T0 history screen (fail-closed; no .env fallback)."
+        )
+    return frozen
+
+
+def build_and_persist_universe(
+    run_sf: sessionmaker[Session],
+    run_id: str,
+    *,
+    provider: MarketUniverseProvider,
+    cfg: PaperValidationConfig,
+    now: datetime,
+    history_ok: dict[str, bool] | None = None,
+) -> UniverseSelection:
+    """Snapshot → select → (optional history screen) → persist. Returns the final
+    selection (its ``selection_hash`` is pre-registrable and fixed for the window).
+    (Kept for existing callers; the P9 startup uses ``select_frozen_universe`` +
+    ``persist_universe`` so there is exactly ONE selection.)"""
+    snapshot = provider.snapshot()
+    selection = select_universe(snapshot, cfg.universe_config())
+    if history_ok is not None:
+        selection = apply_history_screen(selection, history_ok)
+    persist_universe(run_sf, run_id, selection, now)
     return selection

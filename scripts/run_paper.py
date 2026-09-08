@@ -37,8 +37,9 @@ import signal
 
 from app.config import load_settings
 from app.database import init_db, make_engine, make_session_factory
+from app.exceptions import PaperRunError
 from app.logging_config import configure_logging
-from app.paper.build import build_paper_system
+from app.paper.build import start_paper_system
 from app.paper.store import close_paper_run
 from app.time_utils import utc_now
 
@@ -82,8 +83,27 @@ def main() -> int:
         settings.paper_trading, settings.paper_validation_enabled,
     )
 
-    runner, run_id = build_paper_system(settings, main_sf, run_id=args.run_id)
+    # P9 startup orchestration: for a universe-enabled run this performs the T0
+    # selection + P1 history screen ONCE, persists the frozen universe into the run's
+    # own DB, and passes the exact frozen ordered symbols to build_paper_system. A
+    # resume reuses the already-frozen universe (verified hash; no re-selection). It
+    # fails closed (no .env fallback) on any T0/persistence failure. universe_enabled
+    # is false ⇒ the legacy standalone path is unchanged.
+    t0 = utc_now()
+    try:
+        runner, run_id, universe_hash = start_paper_system(
+            settings, main_sf, now=t0, run_id=args.run_id
+        )
+    except PaperRunError as exc:
+        log.error("P9 startup FAILED (fail-closed; no run started): %s", exc)
+        return 1
     log.info("paper run_id=%s db=%s/%s.db", run_id, cfg.paper_runs_dir, run_id)
+    if universe_hash is not None:
+        frozen_syms = [str(s) for s in runner._cfg.symbols]
+        log.info(
+            "P9 frozen universe: run_id=%s t0=%s count=%d hash=%s symbols=%s",
+            run_id, t0.isoformat(), len(frozen_syms), universe_hash, frozen_syms,
+        )
     try:
         if args.supervise:
             _install_graceful_stop()

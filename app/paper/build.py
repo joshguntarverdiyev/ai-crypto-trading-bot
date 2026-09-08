@@ -10,6 +10,8 @@ conservative-settle-margin (news), or advisory-only (Claude). Fail-closed
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.config import AI_ANALYST_VERSION
@@ -19,7 +21,7 @@ from app.config import Settings
 from app.costs.manager import CostManager
 from app.engine.pipeline import TradingEngine
 from app.engine.recorder import TickRecorder
-from app.exceptions import ConfigError
+from app.exceptions import ConfigError, PaperRunError
 from app.execution.paper_broker import PaperBroker
 from app.execution.repository import PaperExecutionRepository
 from app.ids import new_id
@@ -252,3 +254,73 @@ def build_paper_system(
     if notifier is not None:
         notifier.send_alert(alerts.restart_alert(run_id, took_over=took_over, at=utc_now()))
     return runner, run_id
+
+
+def start_paper_system(
+    settings: Settings,
+    main_session_factory: sessionmaker[Session],
+    *,
+    now: datetime,
+    run_id: str | None = None,
+    universe_provider=None,  # noqa: ANN001 (MarketUniverseProvider; injected in tests)
+    market_service=None,  # noqa: ANN001
+    market_adapter: ExchangeAdapter | None = None,
+    news_adapter: NewsSourceAdapter | None = None,
+    analyst_provider: AnalystProvider | None = None,
+    notifier=None,
+):
+    """P9 startup orchestrator. Returns ``(runner, run_id, universe_hash | None)``.
+
+    * ``universe_enabled=False`` (standalone/legacy) → unchanged ``build_paper_system``.
+    * ``universe_enabled=True`` + NEW run → perform the T0 selection EXACTLY ONCE
+      (``select_frozen_universe``), pass the frozen symbols to ``build_paper_system``,
+      then persist THAT SAME Selection (``persist_universe``) into the run's own DB.
+      Persistence failure closes the run and fails closed (never starts processing).
+    * ``universe_enabled=True`` + RESUME (``run_id`` given) → load the already-frozen
+      universe (verifying its hash) and reuse it; NO re-selection, no replacement.
+
+    Fail-closed throughout (``PaperRunError``); never falls back to ``.env`` symbols
+    for a P9 run."""
+    cfg = settings.paper_validation_config()
+    if not cfg.universe_enabled:
+        runner, rid = build_paper_system(
+            settings, main_session_factory, run_id=run_id, notifier=notifier,
+            market_adapter=market_adapter, news_adapter=news_adapter,
+            analyst_provider=analyst_provider,
+        )
+        return runner, rid, None
+
+    from app.paper.store import close_paper_run
+    from app.paper.universe_build import (
+        load_frozen_universe,
+        persist_universe,
+        select_frozen_universe,
+    )
+
+    if run_id is None:  # NEW P9 run: ONE selection → build → persist that selection
+        frozen = select_frozen_universe(
+            settings, cfg, now=now, provider=universe_provider,
+            market_service=market_service, market_adapter=market_adapter,
+        )
+        runner, rid = build_paper_system(
+            settings, main_session_factory, universe_symbols=frozen.symbols,
+            notifier=notifier, market_adapter=market_adapter, news_adapter=news_adapter,
+            analyst_provider=analyst_provider,
+        )
+        try:
+            persist_universe(runner._sf, rid, frozen, now)
+        except Exception as exc:  # persistence failure → fail closed; do not process
+            close_paper_run(main_session_factory, rid, status="stopped")
+            raise PaperRunError(
+                f"frozen-universe persistence failed for run_id={rid} (fail-closed): {exc}"
+            ) from None
+        return runner, rid, frozen.selection_hash
+
+    # RESUME: reuse the already-frozen universe (verify hash); never re-select.
+    symbols, universe_hash = load_frozen_universe(main_session_factory, run_id)
+    runner, rid = build_paper_system(
+        settings, main_session_factory, run_id=run_id, universe_symbols=symbols,
+        notifier=notifier, market_adapter=market_adapter, news_adapter=news_adapter,
+        analyst_provider=analyst_provider,
+    )
+    return runner, rid, universe_hash
