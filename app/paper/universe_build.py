@@ -21,6 +21,7 @@ from app.exceptions import PaperRunError
 from app.market_data.models import Symbol, Timeframe
 from app.models import PaperTradingRunRecord, PaperUniverseRecord
 from app.paper.config import PaperValidationConfig
+from app.time_utils import ensure_utc
 from app.universe.models import UniverseSelection
 from app.universe.provider import MarketUniverseProvider
 from app.universe.selection import apply_history_screen, select_universe
@@ -71,11 +72,13 @@ def _open_run_db_readonly(db_path: str) -> sessionmaker[Session]:
 
 def load_frozen_universe(
     main_sf: sessionmaker[Session], run_id: str
-) -> tuple[list[Symbol], str]:
+) -> tuple[list[Symbol], str, datetime]:
     """Resolve the FROZEN T0 universe for an explicit ``run_id`` — the single source
     of truth. Reads the MAIN catalog for the run's ``db_path`` (authoritative run
     resolution; never guesses a run), then reads ``paper_universe`` from that run's
-    OWN DB read-only. Returns (ordered symbols by rank, selection_hash).
+    OWN DB read-only. Returns (ordered symbols by rank, selection_hash, frozen_t0),
+    where ``frozen_t0`` is the authoritative persisted ``selected_at`` from the
+    ORIGINAL selection (NOT any later resume/process time).
 
     Fail-closed (raises ``PaperRunError``) on: unknown run_id, missing run DB,
     absent/empty universe table, run-identity mismatch, or an inconsistent
@@ -99,7 +102,7 @@ def load_frozen_universe(
                 .where(PaperUniverseRecord.paper_run_id == run_id)
                 .order_by(PaperUniverseRecord.rank)
             ).all()
-            data = [(r.symbol, r.selection_hash) for r in rows]
+            data = [(r.symbol, r.selection_hash, r.selected_at) for r in rows]
     except SQLAlchemyError as exc:  # e.g. no paper_universe table → corrupt/absent
         raise PaperRunError(
             f"frozen universe unreadable for run_id={run_id} (fail-closed): {exc}"
@@ -110,14 +113,15 @@ def load_frozen_universe(
             f"no frozen universe persisted for run_id={run_id} (fail-closed; "
             "no .env/BTC-ETH fallback)."
         )
-    hashes = {h for _sym, h in data}
+    hashes = {h for _sym, h, _t in data}
     if len(hashes) != 1:
         raise PaperRunError(
             f"inconsistent frozen-universe hash for run_id={run_id} "
             "(possible replacement) (fail-closed)."
         )
-    symbols = [Symbol.parse(sym) for sym, _h in data]  # ordered by rank
-    return symbols, hashes.pop()
+    symbols = [Symbol.parse(sym) for sym, _h, _t in data]  # ordered by rank
+    frozen_t0 = ensure_utc(min(t for _s, _h, t in data))  # authoritative persisted T0
+    return symbols, hashes.pop(), frozen_t0
 
 
 def persist_universe(

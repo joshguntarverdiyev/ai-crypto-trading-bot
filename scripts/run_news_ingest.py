@@ -84,7 +84,7 @@ def run(settings, *, iterations: int, supervise: bool, paper_run_id=None, sleep=
             engine = make_engine(settings.database_url)
             init_db(engine)
             main_sf = make_session_factory(engine)
-            symbols, universe_hash = load_frozen_universe(main_sf, paper_run_id)
+            symbols, universe_hash, _frozen_t0 = load_frozen_universe(main_sf, paper_run_id)
         except PaperRunError as exc:
             log.error(
                 "frozen universe resolution FAILED for paper_run_id=%s: %s — fail-closed "

@@ -62,17 +62,18 @@ def test_load_frozen_universe_ordered_symbols_and_hash(tmp_path) -> None:
     markets = [_mkt("BTC/USDT", 900), _mkt("ETH/USDT", 800), _mkt("SOL/USDT", 700),
                _mkt("XRP/USDT", 600), _mkt("PEPE/USDT", 500)]
     main_sf, run_id, sel, _s = _run_with_universe(tmp_path, markets)
-    symbols, uni_hash = load_frozen_universe(main_sf, run_id)
+    symbols, uni_hash, frozen_t0 = load_frozen_universe(main_sf, run_id)
     assert [str(s) for s in symbols] == \
         ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "PEPE/USDT"]  # B: exact order
     assert uni_hash == sel.selection_hash  # C: digest preserved + verified
+    assert frozen_t0 == T0  # authoritative persisted selected_at
 
 
 # --- D/E/J. news config derives tickers + known_assets from the frozen universe -----
 def test_news_config_derives_from_frozen_universe(tmp_path) -> None:
     markets = [_mkt("BTC/USDT", 900), _mkt("ETH/USDT", 800), _mkt("SOL/USDT", 700)]
     main_sf, run_id, _sel, settings = _run_with_universe(tmp_path, markets)
-    symbols, _h = load_frozen_universe(main_sf, run_id)
+    symbols, _h, _t0 = load_frozen_universe(main_sf, run_id)
     eff = _effective_settings(settings, symbols)
     assert eff.crypto_news_config().tickers == ("BTC", "ETH", "SOL")       # D
     assert set(eff.news_config().known_assets) >= {"BTC", "ETH", "SOL"}    # E

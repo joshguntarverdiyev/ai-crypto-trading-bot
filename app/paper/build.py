@@ -269,7 +269,11 @@ def start_paper_system(
     analyst_provider: AnalystProvider | None = None,
     notifier=None,
 ):
-    """P9 startup orchestrator. Returns ``(runner, run_id, universe_hash | None)``.
+    """P9 startup orchestrator. Returns ``(runner, run_id, universe_hash | None,
+    universe_t0 | None)``, where ``universe_t0`` is the authoritative T0 of the frozen
+    universe: ``now`` for a NEW run (== the persisted ``selected_at``), or the ORIGINAL
+    persisted ``selected_at`` for a RESUME (NOT the current resume time). ``None`` for
+    a standalone run.
 
     * ``universe_enabled=False`` (standalone/legacy) → unchanged ``build_paper_system``.
     * ``universe_enabled=True`` + NEW run → perform the T0 selection EXACTLY ONCE
@@ -288,7 +292,7 @@ def start_paper_system(
             market_adapter=market_adapter, news_adapter=news_adapter,
             analyst_provider=analyst_provider,
         )
-        return runner, rid, None
+        return runner, rid, None, None
 
     from app.paper.store import close_paper_run
     from app.paper.universe_build import (
@@ -314,13 +318,14 @@ def start_paper_system(
             raise PaperRunError(
                 f"frozen-universe persistence failed for run_id={rid} (fail-closed): {exc}"
             ) from None
-        return runner, rid, frozen.selection_hash
+        return runner, rid, frozen.selection_hash, now  # NEW: T0 == selection time (now)
 
-    # RESUME: reuse the already-frozen universe (verify hash); never re-select.
-    symbols, universe_hash = load_frozen_universe(main_session_factory, run_id)
+    # RESUME: reuse the already-frozen universe (verify hash + authoritative T0);
+    # never re-select. universe_t0 is the ORIGINAL persisted selected_at, not `now`.
+    symbols, universe_hash, frozen_t0 = load_frozen_universe(main_session_factory, run_id)
     runner, rid = build_paper_system(
         settings, main_session_factory, run_id=run_id, universe_symbols=symbols,
         notifier=notifier, market_adapter=market_adapter, news_adapter=news_adapter,
         analyst_provider=analyst_provider,
     )
-    return runner, rid, universe_hash
+    return runner, rid, universe_hash, frozen_t0

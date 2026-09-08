@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -90,7 +90,7 @@ def _start_new(tmp_path, markets=None, *, provider=None, adapter=None):
     markets = markets or [_mkt("BTC/USDT", 900), _mkt("ETH/USDT", 800), _mkt("SOL/USDT", 700)]
     provider = provider or _CountingProvider(markets)
     adapter = adapter if adapter is not None else _warm_adapter([m.symbol for m in markets])
-    runner, run_id, uni_hash = start_paper_system(
+    runner, run_id, uni_hash, _t0 = start_paper_system(
         settings, main_sf, now=T0, universe_provider=provider, market_adapter=adapter,
         news_adapter=news_adapter(), analyst_provider=FixtureAnalystProvider(APPROVE),
     )
@@ -103,7 +103,7 @@ def test_new_p9_run_single_selection_persist_and_pass(tmp_path) -> None:
     assert provider.snapshots == 1                                   # A/F: exactly ONE snapshot
     passed = [str(s) for s in runner._cfg.symbols]
     assert passed == UNIVERSE                                        # D: rank order preserved
-    persisted, phash = load_frozen_universe(main_sf, run_id)
+    persisted, phash, _t0 = load_frozen_universe(main_sf, run_id)
     assert [str(s) for s in persisted] == UNIVERSE                   # B/C: persisted == passed
     assert phash == uni_hash                                         # E: hash preserved
     # G: the .env MARKET_SYMBOLS (DOGE) was NOT used
@@ -152,11 +152,11 @@ def test_fail_closed_empty_after_history_screen(tmp_path) -> None:
 def test_standalone_non_p9_unchanged(tmp_path) -> None:
     settings = paper_settings(tmp_path, market_symbols=["BTC/USDT"])  # universe_enabled=False
     main_sf = main_factory(settings)
-    runner, run_id, uni_hash = start_paper_system(
+    runner, run_id, uni_hash, uni_t0 = start_paper_system(
         settings, main_sf, now=T0, market_adapter=FixtureExchangeAdapter(ohlcv={}),
         news_adapter=news_adapter(), analyst_provider=FixtureAnalystProvider(APPROVE),
     )
-    assert uni_hash is None                                    # no universe selection
+    assert uni_hash is None and uni_t0 is None                 # no universe selection
     assert [str(s) for s in runner._cfg.symbols] == ["BTC/USDT"]
     # no paper_universe persisted for a standalone run
     assert load_frozen_universe.__name__  # sanity; standalone has no frozen universe
@@ -173,8 +173,9 @@ def test_resume_reuses_frozen_universe_no_reselection(tmp_path) -> None:
     close_paper_run(main_sf, run_id, status="stopped")
 
     resume_provider = _CountingProvider([_mkt("XRP/USDT", 999)])  # a DIFFERENT universe
-    runner2, rid2, hash2 = start_paper_system(
-        settings, main_sf, now=T0, run_id=run_id, universe_provider=resume_provider,
+    resume_now = T0 + timedelta(hours=5)  # a LATER clock than the frozen T0
+    runner2, rid2, hash2, t0_2 = start_paper_system(
+        settings, main_sf, now=resume_now, run_id=run_id, universe_provider=resume_provider,
         market_adapter=_warm_adapter([Symbol.parse(s) for s in UNIVERSE]),
         news_adapter=news_adapter(), analyst_provider=FixtureAnalystProvider(APPROVE),
     )
@@ -182,13 +183,16 @@ def test_resume_reuses_frozen_universe_no_reselection(tmp_path) -> None:
     assert resume_provider.snapshots == 0                      # J: NO re-selection on resume
     assert [str(s) for s in runner2._cfg.symbols] == UNIVERSE  # same frozen universe
     assert hash2 == uni_hash                                   # hash verified/unchanged
+    # AUTHORITATIVE T0: resume returns the ORIGINAL persisted selected_at (T0),
+    # NOT the later resume clock — this is what the log line uses.
+    assert t0_2 == T0 and t0_2 != resume_now
     # M: persisted rows unchanged (still exactly the original universe)
-    persisted, _h = load_frozen_universe(main_sf, run_id)
+    persisted, _h, _t0 = load_frozen_universe(main_sf, run_id)
     assert [str(s) for s in persisted] == UNIVERSE
 
 
 # --- L. run_id resolves the same frozen universe for the news poller ---------------
 def test_run_id_resolves_same_universe_for_poller(tmp_path) -> None:
     _s, main_sf, _runner, run_id, uni_hash, _p = _start_new(tmp_path)
-    symbols, phash = load_frozen_universe(main_sf, run_id)  # what the poller would load
+    symbols, phash, _t0 = load_frozen_universe(main_sf, run_id)  # what the poller would load
     assert [str(s) for s in symbols] == UNIVERSE and phash == uni_hash

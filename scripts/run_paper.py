@@ -16,6 +16,7 @@ Usage::
     python -m scripts.run_paper --iterations 3  # three sweeps (sleeps between)
     python -m scripts.run_paper --run-id <id>   # resume an existing run by id
     python -m scripts.run_paper --run-id <id> --supervise   # long-lived, boundary-aligned
+    python -m scripts.run_paper --startup-only  # T0 startup only, then exit (no processing)
 
 ``--supervise`` runs the self-scheduling boundary loop (``PaperRunner.run``) for a
 long-running, restart-safe deployment (e.g. under launchd ``KeepAlive``). It sleeps
@@ -64,10 +65,19 @@ def main() -> int:
         "--supervise", action="store_true",
         help="run the self-scheduling boundary loop until stopped (launchd/tmux)",
     )
+    parser.add_argument(
+        "--startup-only", action="store_true",
+        help="run ONLY the P9 T0 startup (universe select/persist or resume-load) then "
+             "exit BEFORE any boundary processing (no decisions/fills/orders)",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
     configure_logging(settings)
+
+    if args.startup_only and args.supervise:
+        log.error("--startup-only conflicts with --supervise; refusing to start.")
+        return 2
 
     # Main (catalog) database.
     engine = make_engine(settings.database_url)
@@ -91,7 +101,7 @@ def main() -> int:
     # is false ⇒ the legacy standalone path is unchanged.
     t0 = utc_now()
     try:
-        runner, run_id, universe_hash = start_paper_system(
+        runner, run_id, universe_hash, universe_t0 = start_paper_system(
             settings, main_sf, now=t0, run_id=args.run_id
         )
     except PaperRunError as exc:
@@ -100,10 +110,25 @@ def main() -> int:
     log.info("paper run_id=%s db=%s/%s.db", run_id, cfg.paper_runs_dir, run_id)
     if universe_hash is not None:
         frozen_syms = [str(s) for s in runner._cfg.symbols]
+        # ``universe_t0`` is the AUTHORITATIVE frozen T0 (persisted selected_at) — for a
+        # resume this is the ORIGINAL selection time, never the current resume clock.
         log.info(
             "P9 frozen universe: run_id=%s t0=%s count=%d hash=%s symbols=%s",
-            run_id, t0.isoformat(), len(frozen_syms), universe_hash, frozen_syms,
+            run_id, universe_t0.isoformat(), len(frozen_syms), universe_hash, frozen_syms,
         )
+
+    if args.startup_only:
+        # T0 startup verified (universe selected+persisted for a new run, or the frozen
+        # universe loaded for a resume). Stop here — NO run()/run_once(), no boundary
+        # processing, no decisions/fills/orders. Close the run so ownership is released
+        # and it remains resumable; the OS lock releases on process exit.
+        close_paper_run(main_sf, run_id, status="stopped")
+        log.info(
+            "paper startup-only: T0 startup verified for run_id=%s; exiting BEFORE any "
+            "boundary processing (no decisions/fills/orders).", run_id,
+        )
+        return 0
+
     try:
         if args.supervise:
             _install_graceful_stop()
