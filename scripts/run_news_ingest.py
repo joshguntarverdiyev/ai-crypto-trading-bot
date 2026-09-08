@@ -59,11 +59,41 @@ def _install_graceful_stop() -> None:
     signal.signal(signal.SIGTERM, _handler)
 
 
-def run(settings, *, iterations: int, supervise: bool, sleep=None) -> int:  # noqa: ANN001
+def run(settings, *, iterations: int, supervise: bool, paper_run_id=None, sleep=None) -> int:  # noqa: ANN001, E501
     """Lock-guarded ingestion. A SECOND live instance acquires no lock and returns
     immediately WITHOUT any API call (single-instance safety). The lock is released
-    on graceful shutdown; a crash auto-releases it (OS flock) so restart is safe."""
+    on graceful shutdown; a crash auto-releases it (OS flock) so restart is safe.
+
+    ``paper_run_id`` binds the poller to a specific P9 paper run: the FROZEN T0
+    universe persisted for that run becomes the ONLY source of truth for the Crypto
+    News tickers (and known-assets). If the run/universe cannot be resolved the
+    poller FAILS CLOSED — it does NOT fall back to ``.env``/BTC-ETH and makes ZERO
+    provider calls. Without a ``paper_run_id`` the standalone behavior (tickers from
+    the configured MARKET_SYMBOLS) is preserved."""
     import time as _time
+
+    # Bind to the frozen T0 universe FIRST — before any lock/adapter/poll — so a
+    # resolution failure returns with zero API calls (fail-closed, no fallback).
+    if paper_run_id is not None:
+        from app.database import init_db, make_engine, make_session_factory
+        from app.exceptions import PaperRunError
+        from app.paper.build import _effective_settings
+        from app.paper.universe_build import load_frozen_universe
+
+        try:
+            engine = make_engine(settings.database_url)
+            init_db(engine)
+            main_sf = make_session_factory(engine)
+            symbols, universe_hash = load_frozen_universe(main_sf, paper_run_id)
+        except PaperRunError as exc:
+            log.error(
+                "frozen universe resolution FAILED for paper_run_id=%s: %s — fail-closed "
+                "(no .env fallback, no API call)", paper_run_id, exc,
+            )
+            return 1
+        settings = _effective_settings(settings, symbols)  # tickers = frozen universe
+        log.info("news ingest bound to paper_run_id=%s universe_hash=%s symbols=%d",
+                 paper_run_id, universe_hash[:16], len(symbols))
 
     sleep_fn = sleep or _time.sleep
     lock_path = f"{settings.news_ingest_db_path}.lock"
@@ -107,11 +137,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Crypto News API ingestion poller (Phase 9).")
     parser.add_argument("--iterations", type=int, default=1, help="polls to run (finite mode)")
     parser.add_argument("--supervise", action="store_true", help="loop on the poll interval")
+    parser.add_argument(
+        "--paper-run-id", type=str, default=None,
+        help="bind tickers to a P9 paper run's FROZEN T0 universe (fail-closed)",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
     configure_logging(settings)
-    return run(settings, iterations=args.iterations, supervise=args.supervise)
+    return run(
+        settings, iterations=args.iterations, supervise=args.supervise,
+        paper_run_id=args.paper_run_id,
+    )
 
 
 if __name__ == "__main__":
