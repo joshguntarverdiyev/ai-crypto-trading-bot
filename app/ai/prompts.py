@@ -9,8 +9,16 @@ the strict structured JSON validated by ``app.ai.schema``.
 from __future__ import annotations
 
 from app.ai.config import PROMPT_VERSION
+from app.ai.models import AnalystDecision, EventRisk, ReasonCode
 from app.news.models import NewsContext
 from app.strategy.models import Candidate
+
+# Derive the allowed vocabulary from the enums so the prompt can NEVER drift from
+# the strict schema validator (app/ai/schema.py). The model is constrained to these
+# exact values; anything else is rejected → HOLD (fail-closed, never weakened).
+_DECISIONS = "|".join(d.value for d in AnalystDecision)
+_EVENT_RISKS = "|".join(e.value for e in EventRisk)
+_REASON_CODES = ", ".join(r.value for r in ReasonCode)
 
 
 def build_analyst_prompt(candidate: Candidate, news: NewsContext) -> str:
@@ -46,8 +54,15 @@ def build_analyst_prompt(candidate: Candidate, news: NewsContext) -> str:
         lines.append("  (no usable news items)")
     lines += [
         "",
-        "Return JSON with keys: decision (approve|veto|uncertain), confidence"
-        " (0..1), reason_codes[], affected_assets[], event_risk (low|medium|high),"
-        " evidence[].",
+        "OUTPUT CONTRACT — return ONE JSON object and NOTHING else. No markdown, no"
+        " code fences (no ```), no prose, no comments. Exact keys and value formats:",
+        f'  "decision": one of [{_DECISIONS}]',
+        '  "confidence": number in 0..1',
+        f"  \"reason_codes\": array using ONLY these values [{_REASON_CODES}];"
+        ' use [] if none, or ["unknown"] if unsure. Do NOT invent codes.',
+        '  "affected_assets": array of BASE asset symbols only, UPPERCASE'
+        ' alphanumeric, NO quote/pair and NO slash (e.g. "BTC", not "BTC/USDT"); [] if none.',
+        f'  "event_risk": one of [{_EVENT_RISKS}]',
+        '  "evidence": array of short plain strings (never objects).',
     ]
     return "\n".join(lines)

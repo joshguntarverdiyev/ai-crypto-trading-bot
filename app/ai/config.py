@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 AI_ANALYST_VERSION = "ai-v1"
-PROMPT_VERSION = "analyst-v1"
+PROMPT_VERSION = "analyst-v2"  # v2: explicit schema vocabulary + no-fence output (P9 preflight)
 
 
 class ModelClass(StrEnum):

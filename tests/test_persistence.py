@@ -55,7 +55,7 @@ def test_claude_decision_denormalizes_model_identity(tmp_path) -> None:
         row = s.scalars(select(ClaudeDecisionRecord)).first()
         assert row is not None
         assert row.model_id == "claude-sonnet-4-6"  # exact runtime id (§16)
-        assert row.prompt_version == "analyst-v1"
+        assert row.prompt_version == "analyst-v2"
 
 
 def test_news_is_idempotent_across_ticks(tmp_path) -> None:
