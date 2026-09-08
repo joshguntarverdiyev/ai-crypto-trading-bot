@@ -117,6 +117,23 @@ def _claude_calls_so_far(run_sf: sessionmaker[Session]) -> int:
         return 0
 
 
+def _effective_settings(settings: Settings, universe_symbols) -> Settings:  # noqa: ANN001
+    """Route the authoritative T0 universe into ``market_symbols`` (the single source
+    of truth) so the paper cfg, ``crypto_news_config().tickers`` and
+    ``news_config().known_assets`` all derive from it. ``universe_symbols`` empty/None
+    ⇒ the settings are returned unchanged (explicit BTC/ETH config preserved)."""
+    if not universe_symbols:
+        return settings
+    # market_symbols = the universe; universe_enabled=True so the runner's
+    # processing/priority order preserves the volume-rank order (not alphabetical).
+    return settings.model_copy(
+        update={
+            "market_symbols": [str(s) for s in universe_symbols],
+            "paper_universe_enabled": True,
+        }
+    )
+
+
 def build_paper_system(
     settings: Settings,
     main_session_factory: sessionmaker[Session],
@@ -126,13 +143,19 @@ def build_paper_system(
     market_adapter: ExchangeAdapter | None = None,
     news_adapter: NewsSourceAdapter | None = None,
     analyst_provider: AnalystProvider | None = None,
+    universe_symbols=None,  # authoritative T0 universe (Symbols); None ⇒ use config
 ) -> tuple[PaperRunner, str]:
     """Build a ``PaperRunner`` + open/resume its run. Returns (runner, run_id).
 
     ``run_id=None`` starts a NEW isolated run; a given ``run_id`` resumes it.
     Adapters may be injected (tests); otherwise resolved from config (offline
-    fixtures by default).
+    fixtures by default). ``universe_symbols`` (the frozen T0 selection) becomes the
+    authoritative ``market_symbols`` so the news tickers + known-assets follow the
+    universe; passing ``None`` preserves the configured (e.g. BTC/ETH) behavior.
     """
+    # Wire the authoritative universe into market_symbols (single source of truth).
+    settings = _effective_settings(settings, universe_symbols)
+
     # Fail-closed flag matrix (§35.15): P9 runs ONLY under
     # (live_trading=False, paper_trading=False, paper_validation_enabled=True).
     if not settings.paper_validation_enabled:
