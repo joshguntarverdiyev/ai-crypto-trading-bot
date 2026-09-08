@@ -301,6 +301,7 @@ class TradingEngine:
             day_baseline_equity=self._pf.baseline_equity(day_start(decision_time)),
             week_baseline_equity=self._pf.baseline_equity(week_start(decision_time)),
             decision_time=decision_time,
+            marks=marks_now,  # OD-3: full-book equity for drawdown/loss gates (P9)
         )
         if assessment.decision is not RiskDecision.APPROVE:
             self._persist(

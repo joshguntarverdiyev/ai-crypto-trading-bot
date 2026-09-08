@@ -56,6 +56,16 @@ class PaperValidationConfig:
     mc_max_drawdown_ceiling: float = 0.25  # pre-registered MC max-drawdown p95 ceiling (fraction)
     seed: int = 12345  # seeds bootstrap/Monte Carlo only (replay has no RNG)
 
+    # --- Phase 9 redesign: multi-symbol universe + window + Claude budget ---
+    validation_days: int = 90  # calendar-day validation window (10 for the redesign)
+    universe_enabled: bool = False
+    universe_quote: str = "USDT"
+    universe_max_symbols: int = 30
+    universe_min_quote_volume: Decimal = Decimal("5000000")
+    universe_exchange_id: str = "binance"
+    claude_max_per_boundary: int = 8
+    claude_max_per_run: int = 5000
+
     engine_version: str = field(default=PAPER_ENGINE_VERSION)
 
     def __post_init__(self) -> None:
@@ -91,6 +101,12 @@ class PaperValidationConfig:
             raise ValueError("concentration_top_k must be >= 1")
         if not (0.0 < self.mc_max_drawdown_ceiling <= 1.0):
             raise ValueError("mc_max_drawdown_ceiling must be in (0, 1]")
+        if self.validation_days < 1:
+            raise ValueError("validation_days must be >= 1")
+        if self.universe_max_symbols < 1:
+            raise ValueError("universe_max_symbols must be >= 1")
+        if self.claude_max_per_boundary < 1 or self.claude_max_per_run < 1:
+            raise ValueError("claude budgets must be >= 1")
         # Fail-closed: a real CCXT source needs an explicit (public data-source) id.
         # This is NOT the deferred live-execution exchange choice (Master Plan §0.2-5).
         if self.market_data_source is MarketDataSource.CCXT and not self.market_data_exchange_id:
@@ -103,6 +119,33 @@ class PaperValidationConfig:
     def canonical_symbols(self) -> tuple[Symbol, ...]:
         """Deterministic per-boundary processing order (input-order-independent)."""
         return tuple(sorted(self.symbols, key=str))
+
+    @property
+    def processing_order(self) -> tuple[Symbol, ...]:
+        """Deterministic entry/budget priority order. When the universe is enabled the
+        runner supplies ``symbols`` already in volume-rank order (highest 24h quote
+        volume first); we preserve that order (stable-deduped). Otherwise fall back to
+        the canonical sorted order. Idempotency is per ``(decision_time, symbol)`` and
+        is unaffected by processing order."""
+        if not self.universe_enabled:
+            return self.canonical_symbols
+        seen: set[str] = set()
+        ordered: list[Symbol] = []
+        for s in self.symbols:
+            k = str(s)
+            if k not in seen:
+                seen.add(k)
+                ordered.append(s)
+        return tuple(ordered)
+
+    def universe_config(self):  # noqa: ANN201 (return type imported lazily)
+        from app.universe.config import UniverseConfig
+
+        return UniverseConfig(
+            quote=self.universe_quote,
+            max_symbols=self.universe_max_symbols,
+            min_quote_volume=self.universe_min_quote_volume,
+        )
 
     def warmup_min(self, indicator_min_history: int) -> int:
         """Required usable closed candles = IndicatorConfig.min_history + buffer."""

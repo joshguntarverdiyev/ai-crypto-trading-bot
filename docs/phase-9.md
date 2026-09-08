@@ -146,6 +146,44 @@ operational choices deferred to when the window is actually started.
 validation has passed. After implementation, P9 must actually operate for the
 required validation window before its evidence is meaningful.
 
+## Redesign: multi-symbol universe + 10-day validation (additive)
+- **Universe (`app/universe/`):** a deterministic, reproducible selection of Binance
+  USDT spot pairs from a **T0 snapshot** — `quote=USDT`, `status=TRADING`, exclude
+  leveraged tokens + stablecoin bases + below a 24h quote-volume floor, then rank by
+  24h volume (desc, symbol tie-break), take top `N_max=30` (**effective universe =
+  min(30, eligible survivors)**). A runtime warmup/OHLCV-quality screen (frozen P1
+  path) drops history-invalid symbols with **no replacement** (B3). The universe is
+  **fixed for the whole 10-day window**; the snapshot + `selection_hash` are persisted
+  (`paper_universe`) and pre-registered — no look-ahead, no survivorship, no mid-run
+  replacement. **Correlation is NOT estimated** (forbidden): cross-asset risk is
+  governed by the RiskManager's per-symbol + total exposure caps (documented limit).
+- **Positions:** `max_simultaneous_positions=6`; `max_total_exposure_pct=30%`,
+  `max_single_asset_exposure_pct=20%`, conservative per-trade sizing/risk — unchanged.
+- **OD-3 (portfolio marks):** `RiskManager.evaluate` takes an optional `marks` map so
+  the equity / drawdown / daily-loss / weekly-loss gates value the WHOLE open book;
+  `marks=None` is byte-identical to frozen P6. This is the ONLY frozen-code change.
+- **Claude budget (`app/paper/budget.py`):** `BudgetedAnalyst` (a drop-in
+  `ClaudeAnalyst` subclass) caps ACTUAL provider calls per boundary + per run
+  (runaway backstops set well above expected); exhaustion → fail-closed
+  `HOLD (UNAVAILABLE)` (no provider call, no Claude-less entry). The deterministic
+  funnel (universe → data quality → indicators/regime → candidate → cost/edge → news
+  → **Claude only here** → RiskManager → PaperBroker) is unchanged; per-boundary
+  funnel counters are persisted (`paper_boundary_funnel`) and the per-run count is
+  seeded from them for restart-safety.
+- **News budget (trial; no purchase):** the poller is global (universe size does NOT
+  change news calls). A 3h cadence (`CRYPTO_NEWS_POLL_SECONDS=10800`) → ~80 calls over
+  10 days. **Whether the trial cap is 100 TOTAL or per-day is NOT confirmable from
+  repo evidence → an explicit pre-runtime blocker** (do not guess); the 80-call target
+  is conservative under either. News stays fail-closed (empty/unavailable ⇒ HOLD).
+- **10-day gates + verdict:** `validation_days=10` is pre-registered. Gates are
+  classified **PASS / FAIL / INSUFFICIENT_EVIDENCE**: operational gates (uptime, gaps,
+  data quality) can meaningfully PASS/FAIL in 10 days; statistical gates require
+  `min_meaningful_trades=100` (**NOT lowered**) and return INSUFFICIENT_EVIDENCE when
+  unmet — a positive 10-day P&L can **never** be PASS on its own. Per-symbol
+  concentration + per-symbol P&L are reported. *(An operational-adequacy trade
+  threshold below 100 is intentionally left unset pending review — it is NOT the
+  statistical bar.)*
+
 ## Known limitations (by design; not safety issues)
 - **News settle margin:** enforced and unit-tested at the adapter level (shifts
   `available_at` forward); the end-to-end integration through the real CryptoPanic

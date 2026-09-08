@@ -205,6 +205,27 @@ def duration_stats(run_sf: sessionmaker[Session], *, primary_tf_seconds: int) ->
     )
 
 
+# --- per-symbol concentration (P9 redesign multi-symbol) ---------------------
+def per_symbol_net_pnl(trades: list[_Trade]) -> dict[str, Decimal]:
+    """Net P&L attributed to each symbol across CLOSED trades."""
+    out: dict[str, Decimal] = {}
+    for t in trades:
+        out[t.symbol] = out.get(t.symbol, Decimal(0)) + t.net_pnl
+    return out
+
+
+def max_symbol_concentration(trades: list[_Trade]) -> float | None:
+    """Largest single-symbol share of TOTAL POSITIVE net P&L (a portfolio-
+    concentration signal; None when there is no positive P&L). A value near 1.0
+    means one symbol dominates the paper result — reported, never auto-PASS."""
+    by_symbol = per_symbol_net_pnl(trades)
+    positive = {s: p for s, p in by_symbol.items() if p > 0}
+    total = sum(positive.values(), Decimal(0))
+    if total <= 0:
+        return None
+    return float(max(positive.values()) / total)
+
+
 # --- pre-registration (§35.4) ------------------------------------------------
 def preregistration(run_id: str, cfg: PaperValidationConfig) -> PreRegistration:
     """Lock the objective gate thresholds BEFORE results are read (curve-fit guard)."""
@@ -217,6 +238,11 @@ def preregistration(run_id: str, cfg: PaperValidationConfig) -> PreRegistration:
         "rolling_buckets": float(cfg.rolling_buckets),
         "concentration_top_k": float(cfg.concentration_top_k),
         "mc_max_drawdown_ceiling": float(cfg.mc_max_drawdown_ceiling),
+        # P9 redesign: window + universe + Claude budget are pre-registered too.
+        "validation_days": float(cfg.validation_days),
+        "universe_max_symbols": float(cfg.universe_max_symbols),
+        "claude_max_per_boundary": float(cfg.claude_max_per_boundary),
+        "claude_max_per_run": float(cfg.claude_max_per_run),
     }
     return PreRegistration(
         dataset_hash=hashlib.sha256(run_id.encode("utf-8")).hexdigest(),

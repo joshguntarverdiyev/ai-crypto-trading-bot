@@ -24,6 +24,7 @@ from app.models.news_record import NewsRecord
 from app.models.paper import PaperFillRecord, PaperOrderRecord
 from app.models.paper_decision import PaperDecisionRecord
 from app.models.paper_run import PaperTradingRunRecord
+from app.models.paper_universe import PaperBoundaryFunnelRecord, PaperUniverseRecord
 from app.models.portfolio import PortfolioSnapshotRecord, PositionRecord
 from app.models.shadow import ShadowDecisionRecord, ShadowRunRecord
 from app.models.system_event import SystemEvent
@@ -55,4 +56,7 @@ __all__ = [
     # Phase 9 — paper-validation run catalog (main DB) + per-run decision audit (run DB)
     "PaperTradingRunRecord",
     "PaperDecisionRecord",
+    # Phase 9 redesign — universe snapshot + per-boundary funnel counters (run DB)
+    "PaperUniverseRecord",
+    "PaperBoundaryFunnelRecord",
 ]

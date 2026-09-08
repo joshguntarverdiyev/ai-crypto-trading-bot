@@ -62,6 +62,7 @@ class PaperRunner:
         notifier=None,
         secrets: tuple[str, ...] = (),
         heartbeat_every: int = 24,  # boundaries between liveness heartbeat alerts
+        budgeted_analyst=None,  # P9 redesign: BudgetedAnalyst (Claude cost control)
     ) -> None:
         self._engine = engine
         self._rec = recorder
@@ -82,6 +83,7 @@ class PaperRunner:
         self._last_drawdown_bucket = 0
         self._heartbeat_every = max(1, heartbeat_every)
         self._iterations = 0
+        self._budget = budgeted_analyst  # BudgetedAnalyst | None
         self._lock: object | None = None  # OS run lock handle (set by build_paper_system)
 
     # --- helpers --------------------------------------------------------
@@ -201,13 +203,15 @@ class PaperRunner:
         self._check_drift(now)
         decision_time = self.boundary(now)
         self._detect_gap(decision_time)
+        if self._budget is not None:
+            self._budget.reset_boundary(decision_time)  # refresh per-boundary Claude cap
 
         marks, regimes, failed = self._prefetch(decision_time)
         processed: list[tuple[Symbol, TickResult, Decimal | None, str | None]] = []
         any_success = False
         any_failure = False
 
-        for symbol in self._cfg.canonical_symbols:
+        for symbol in self._cfg.processing_order:
             # Idempotency: a durable paper_decisions row short-circuits BEFORE any
             # provider call (no duplicate Claude/news cost; restart-safe).
             if self._rec.find_decision_id(decision_time, symbol) is not None:
@@ -248,10 +252,53 @@ class PaperRunner:
             self._alert(alerts.recovery_alert(at=now))
 
         self._finalize_boundary(decision_time, now, marks, processed)
+        self._record_funnel(decision_time, processed, data_failures=len(failed))
         self._iterations += 1
         if self._iterations % self._heartbeat_every == 0:
             self._alert(alerts.heartbeat_alert(self._run_id, at=now))
         return [r for (_s, r, _m, _rg) in processed]
+
+    def _record_funnel(
+        self,
+        decision_time: datetime,
+        processed: list[tuple[Symbol, TickResult, Decimal | None, str | None]],
+        *,
+        data_failures: int,
+    ) -> None:
+        """Persist deterministic per-boundary funnel counters (observability +
+        Claude-budget accounting). Idempotent on ``(run_id, decision_time)``."""
+        from app.models import PaperBoundaryFunnelRecord
+
+        _post_candidate = {"analyst", "sizing", "risk", "execution", "exit"}
+        candidates = sum(1 for (_s, r, _m, _rg) in processed if r.stage in _post_candidate)
+        entries = sum(1 for (_s, r, _m, _rg) in processed if r.outcome.value == "trade")
+        exits = sum(1 for (_s, r, _m, _rg) in processed if r.outcome.value == "exit")
+        rejects = sum(1 for (_s, r, _m, _rg) in processed if r.outcome.value == "reject")
+        claude_calls = int(getattr(self._budget, "calls", 0)) if self._budget else 0
+        claude_skipped = int(getattr(self._budget, "budget_skipped", 0)) if self._budget else 0
+        try:
+            with session_scope(self._sf) as session:
+                exists = session.scalars(
+                    select(PaperBoundaryFunnelRecord).where(
+                        PaperBoundaryFunnelRecord.paper_run_id == self._run_id,
+                        PaperBoundaryFunnelRecord.decision_time == decision_time,
+                    )
+                ).first()
+                if exists is not None:
+                    return  # restart-safe: never double-count a boundary
+                session.add(
+                    PaperBoundaryFunnelRecord(
+                        paper_run_id=self._run_id, decision_time=decision_time,
+                        universe_size=len(self._cfg.processing_order),
+                        data_ok=len(processed), data_failures=data_failures,
+                        candidates=candidates, claude_calls=claude_calls,
+                        claude_budget_skipped=claude_skipped, entries=entries,
+                        exits=exits, risk_rejects=rejects,
+                    )
+                )
+        except Exception:  # observability write must never break the run (best-effort)
+            self._event("WARNING", "paper.funnel_write_failed",
+                        {"decision_time": decision_time.isoformat()})
 
     def _handle_data_failure(self, symbol: Symbol, now: datetime) -> None:
         self._consecutive_failures += 1

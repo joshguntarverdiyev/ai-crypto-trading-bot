@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.ai.analyst import ClaudeAnalyst
 from app.ai.config import AI_ANALYST_VERSION
 from app.ai.fixture_provider import FixtureAnalystProvider
 from app.ai.provider import AnalystProvider
@@ -34,6 +33,7 @@ from app.news.adapter import NewsSourceAdapter
 from app.news.fixture_adapter import FixtureNewsAdapter
 from app.news.service import NewsService
 from app.paper import alerts
+from app.paper.budget import BudgetedAnalyst
 from app.paper.config import AIProvider, MarketDataSource, NewsSource, PaperValidationConfig
 from app.paper.news_adapter import SettleMarginNewsAdapter
 from app.paper.recorder import PaperRecorder
@@ -99,6 +99,24 @@ def _analyst_provider(settings: Settings, cfg: PaperValidationConfig) -> Analyst
     return FixtureAnalystProvider("")  # offline default → schema_invalid → HOLD
 
 
+def _claude_calls_so_far(run_sf: sessionmaker[Session]) -> int:
+    """Durable per-run Claude call count (sum of persisted boundary funnel counters)
+    so the per-run budget ceiling survives a restart."""
+    from sqlalchemy import func, select
+
+    from app.database import session_scope
+    from app.models import PaperBoundaryFunnelRecord
+
+    try:
+        with session_scope(run_sf) as session:
+            total = session.scalar(
+                select(func.coalesce(func.sum(PaperBoundaryFunnelRecord.claude_calls), 0))
+            )
+            return int(total or 0)
+    except Exception:
+        return 0
+
+
 def build_paper_system(
     settings: Settings,
     main_session_factory: sessionmaker[Session],
@@ -158,11 +176,21 @@ def build_paper_system(
 
     market_service = MarketDataService(CandleRepository(run_sf))
     kill = KillSwitch(run_sf)  # this run's OWN kill switch (isolated)
+
+    # Claude cost control (P9 redesign): a budget-aware analyst (drop-in ClaudeAnalyst
+    # subclass) capping ACTUAL provider calls per boundary + per run. Seed the per-run
+    # count from durable funnel counters so the ceiling survives restart.
+    budgeted = BudgetedAnalyst(
+        settings.ai_config(), provider,
+        max_per_boundary=cfg.claude_max_per_boundary,
+        max_per_run=cfg.claude_max_per_run,
+        run_calls_seed=_claude_calls_so_far(run_sf),
+    )
     engine = TradingEngine(
         market_service=market_service,
         market_adapter=adapter,
         news_service=news,
-        analyst=ClaudeAnalyst(settings.ai_config(), provider),
+        analyst=budgeted,
         feature_builder=FeatureBuilder(settings.indicator_config()),
         candidate_generator=CandidateGenerator(
             settings.strategy_config(), CostManager(settings.cost_config())
@@ -194,6 +222,7 @@ def build_paper_system(
         owner_token=owner_token,
         notifier=notifier,
         secrets=tuple(settings.secret_values()),
+        budgeted_analyst=budgeted,
     )
     runner._lock = lock  # hold the OS lock for the runner's lifetime
 

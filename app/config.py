@@ -240,6 +240,18 @@ class Settings(BaseSettings):
     paper_concentration_top_k: int = 3
     paper_mc_max_drawdown_ceiling: float = 0.25
     paper_seed: int = 12345
+    # --- Phase 9 redesign: multi-symbol universe + 10-day window + Claude budget ---
+    # Defaults preserve the prior 2-symbol / 90-day behavior; the redesigned run is
+    # driven by explicit config + pre-registration. universe_enabled=false keeps the
+    # legacy market_symbols universe.
+    paper_validation_days: int = 90  # calendar-day validation window (set 10 for redesign)
+    paper_universe_enabled: bool = False  # true → select the universe from a T0 snapshot
+    paper_universe_quote: str = "USDT"
+    paper_universe_max_symbols: int = 30  # N_max operational cap
+    paper_universe_min_quote_volume: Decimal = Decimal("5000000")  # 24h quote-volume floor
+    paper_universe_exchange_id: str = "binance"  # public/keyless enumeration source
+    paper_claude_max_per_boundary: int = 8  # runaway backstop (well above expected)
+    paper_claude_max_per_run: int = 5000  # per-run Claude ceiling (fail-closed HOLD if hit)
 
     # --- Crypto News API news provider (Phase 9; Tier-2 continuous ingestion) ---
     # Real HTTP provider selected via ``news_source=cryptonewsapi``. The token is a
@@ -605,6 +617,14 @@ class Settings(BaseSettings):
             concentration_top_k=self.paper_concentration_top_k,
             mc_max_drawdown_ceiling=self.paper_mc_max_drawdown_ceiling,
             seed=self.paper_seed,
+            validation_days=self.paper_validation_days,
+            universe_enabled=self.paper_universe_enabled,
+            universe_quote=self.paper_universe_quote,
+            universe_max_symbols=self.paper_universe_max_symbols,
+            universe_min_quote_volume=self.paper_universe_min_quote_volume,
+            universe_exchange_id=self.paper_universe_exchange_id,
+            claude_max_per_boundary=self.paper_claude_max_per_boundary,
+            claude_max_per_run=self.paper_claude_max_per_run,
         )
 
     def crypto_news_config(self):  # noqa: ANN201 (return type imported lazily)

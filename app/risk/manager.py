@@ -10,6 +10,7 @@ trusted. Claude can never relax any limit. APPROVE / HOLD / REJECT.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 
@@ -81,7 +82,14 @@ class RiskManager:
         day_baseline_equity: Decimal,
         week_baseline_equity: Decimal,
         decision_time: datetime,
+        marks: Mapping[str, Decimal] | None = None,
     ) -> RiskAssessment:
+        # OD-3 (P9 multi-symbol): ``marks`` is an OPTIONAL full symbol→decision-time-
+        # close map so the authoritative equity / drawdown / daily-loss / weekly-loss
+        # gates value the WHOLE open book (not just the symbol under evaluation).
+        # ``marks=None`` is byte-identical to frozen P6 single-symbol valuation
+        # (``{symbol: last_close}``); the current symbol's own mark always takes
+        # precedence for consistency. Exposure caps use entry notional (unchanged).
         cfg = self._cfg
         symbol = candidate.symbol if candidate is not None else None
 
@@ -143,9 +151,10 @@ class RiskManager:
         if market.atr_pct >= cfg.vol_shock_atr_pct:
             return R(RiskReason.VOLATILITY_SHOCK)
 
-        # 5. authoritative equity
-        marks = {str(market.symbol): market.last_close}
-        equity = account.equity(marks)
+        # 5. authoritative equity (OD-3: full-book when marks supplied; own mark wins)
+        own_mark = {str(market.symbol): market.last_close}
+        eq_marks = own_mark if marks is None else {**marks, **own_mark}
+        equity = account.equity(eq_marks)
         ev["account_equity"] = str(equity)
         ev["hwm_equity"] = str(account.hwm_equity)
         ev["day_baseline_equity"] = str(day_baseline_equity)
