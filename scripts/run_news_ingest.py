@@ -59,7 +59,15 @@ def _install_graceful_stop() -> None:
     signal.signal(signal.SIGTERM, _handler)
 
 
-def run(settings, *, iterations: int, supervise: bool, paper_run_id=None, sleep=None) -> int:  # noqa: ANN001, E501
+def run(
+    settings,  # noqa: ANN001
+    *,
+    iterations: int,
+    supervise: bool,
+    paper_run_id=None,  # noqa: ANN001
+    follow_active_run: bool = False,
+    sleep=None,  # noqa: ANN001
+) -> int:
     """Lock-guarded ingestion. A SECOND live instance acquires no lock and returns
     immediately WITHOUT any API call (single-instance safety). The lock is released
     on graceful shutdown; a crash auto-releases it (OS flock) so restart is safe.
@@ -69,8 +77,33 @@ def run(settings, *, iterations: int, supervise: bool, paper_run_id=None, sleep=
     News tickers (and known-assets). If the run/universe cannot be resolved the
     poller FAILS CLOSED — it does NOT fall back to ``.env``/BTC-ETH and makes ZERO
     provider calls. Without a ``paper_run_id`` the standalone behavior (tickers from
-    the configured MARKET_SYMBOLS) is preserved."""
+    the configured MARKET_SYMBOLS) is preserved.
+
+    ``follow_active_run`` (used when no explicit ``paper_run_id`` is given) discovers
+    the UNIQUE actively-owned paper run from the MAIN catalog (``status='running'`` +
+    fresh heartbeat) and binds to it exactly as an explicit id would. If there is no
+    such run — or the identity is ambiguous/stale — it FAILS CLOSED with ZERO API
+    calls (no lock, no adapter). This lets a supervisor (systemd) start the poller
+    without a hardcoded run UUID while preserving the explicit-identity guarantees."""
     import time as _time
+
+    # Discover the active run FIRST (read-only catalog query; no API). A missing /
+    # ambiguous / stale identity yields zero API calls (fail-closed, no fallback).
+    if paper_run_id is None and follow_active_run:
+        from app.database import init_db, make_engine, make_session_factory
+        from app.paper.store import resolve_active_run_id
+
+        engine = make_engine(settings.database_url)
+        init_db(engine)
+        main_sf = make_session_factory(engine)
+        paper_run_id = resolve_active_run_id(main_sf, settings.paper_validation_config())
+        if paper_run_id is None:
+            log.warning(
+                "no unique active paper run (status='running' + fresh heartbeat); "
+                "fail-closed (no binding, 0 API calls)"
+            )
+            return 1
+        log.info("news ingest following active paper_run_id=%s", paper_run_id)
 
     # Bind to the frozen T0 universe FIRST — before any lock/adapter/poll — so a
     # resolution failure returns with zero API calls (fail-closed, no fallback).
@@ -137,9 +170,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Crypto News API ingestion poller (Phase 9).")
     parser.add_argument("--iterations", type=int, default=1, help="polls to run (finite mode)")
     parser.add_argument("--supervise", action="store_true", help="loop on the poll interval")
-    parser.add_argument(
+    bind = parser.add_mutually_exclusive_group()
+    bind.add_argument(
         "--paper-run-id", type=str, default=None,
         help="bind tickers to a P9 paper run's FROZEN T0 universe (fail-closed)",
+    )
+    bind.add_argument(
+        "--follow-active-run", action="store_true",
+        help="discover the UNIQUE active paper run (running+fresh) and bind to it; "
+             "no active/ambiguous/stale run → fail-closed with 0 API calls",
     )
     args = parser.parse_args()
 
@@ -147,7 +186,7 @@ def main() -> int:
     configure_logging(settings)
     return run(
         settings, iterations=args.iterations, supervise=args.supervise,
-        paper_run_id=args.paper_run_id,
+        paper_run_id=args.paper_run_id, follow_active_run=args.follow_active_run,
     )
 
 

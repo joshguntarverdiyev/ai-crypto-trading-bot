@@ -33,8 +33,11 @@ This process can never place a real order.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
+import os
 import signal
+import tempfile
 
 from app.config import load_settings
 from app.database import init_db, make_engine, make_session_factory
@@ -45,6 +48,25 @@ from app.paper.store import close_paper_run
 from app.time_utils import utc_now
 
 log = logging.getLogger("scripts.run_paper")
+
+
+def _emit_run_id_file(path: str, run_id: str) -> None:
+    """Atomically publish the resolved run_id as a systemd-consumable EnvironmentFile
+    line (``PAPER_RUN_ID=<uuid>``). Written via a temp file + ``os.replace`` so a
+    reader (or a crash mid-write) never sees a partial id. Used by the one-shot
+    bootstrap so long-running units can resume the SAME run without a hardcoded UUID."""
+    target = os.path.expanduser(path)
+    directory = os.path.dirname(target) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".paper-run-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(f"PAPER_RUN_ID={run_id}\n")
+        os.replace(tmp, target)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+        raise
 
 
 def _install_graceful_stop() -> None:
@@ -69,6 +91,11 @@ def main() -> int:
         "--startup-only", action="store_true",
         help="run ONLY the P9 T0 startup (universe select/persist or resume-load) then "
              "exit BEFORE any boundary processing (no decisions/fills/orders)",
+    )
+    parser.add_argument(
+        "--emit-run-id-file", type=str, default=None, metavar="PATH",
+        help="atomically write PAPER_RUN_ID=<run_id> to PATH after startup (systemd "
+             "EnvironmentFile) so units can resume this run without a hardcoded UUID",
     )
     args = parser.parse_args()
 
@@ -108,6 +135,9 @@ def main() -> int:
         log.error("P9 startup FAILED (fail-closed; no run started): %s", exc)
         return 1
     log.info("paper run_id=%s db=%s/%s.db", run_id, cfg.paper_runs_dir, run_id)
+    if args.emit_run_id_file:
+        _emit_run_id_file(args.emit_run_id_file, run_id)
+        log.info("paper run_id published to %s", args.emit_run_id_file)
     if universe_hash is not None:
         frozen_syms = [str(s) for s in runner._cfg.symbols]
         # ``universe_t0`` is the AUTHORITATIVE frozen T0 (persisted selected_at) — for a

@@ -195,6 +195,29 @@ def _is_fresh(heartbeat_at: datetime | None, cfg: PaperValidationConfig, now: da
     return (now - ensure_utc(heartbeat_at)).total_seconds() <= stale_after
 
 
+def resolve_active_run_id(
+    main_sf: sessionmaker[Session],
+    cfg: PaperValidationConfig,
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    """Read-only discovery of the UNIQUE actively-owned run.
+
+    Returns the ``run_id`` of the single ``paper_trading_runs`` row that is
+    ``status='running'`` AND has a fresh heartbeat (reusing ``_is_fresh``). Returns
+    ``None`` when there is no such run OR when more than one qualifies (ambiguous —
+    e.g. a split-brain). Never mutates the catalog, never creates a run, never opens a
+    run DB. Callers MUST fail closed on ``None`` (a missing/stale/ambiguous identity is
+    never treated as safe)."""
+    now = now or utc_now()
+    with session_scope(main_sf) as session:
+        rows = session.scalars(
+            select(PaperTradingRunRecord).where(PaperTradingRunRecord.status == "running")
+        ).all()
+        active = [r.id for r in rows if _is_fresh(r.heartbeat_at, cfg, now)]
+    return active[0] if len(active) == 1 else None
+
+
 def resume_paper_run(
     main_sf: sessionmaker[Session],
     cfg: PaperValidationConfig,

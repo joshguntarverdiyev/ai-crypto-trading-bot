@@ -1,0 +1,40 @@
+# NON-ACTIVE systemd TEMPLATE — Phase 9 paper-validation bootstrap (one-shot).
+#
+# EXAMPLE only. NOT installed, NOT enabled, starts NO runtime. Do not treat its
+# presence as a running service.
+#
+# Purpose: create the P9 paper run ONCE (freezes the T0 universe) and publish its
+# run_id to an EnvironmentFile so the long-running units resume the SAME run without
+# a hardcoded UUID. Runs exactly once — ConditionPathExists skips it if the run-id
+# file already exists, so a reboot never re-bootstraps (which would reselect the
+# universe / start a second validation run).
+#
+# SECURITY: NO secrets here. The app reads credentials from the git-ignored `.env`
+# in <ABSOLUTE_REPO_PATH> (pydantic env_file). Never add API keys/tokens to units.
+# `.env` MUST have PAPER_VALIDATION_ENABLED=true and LIVE_TRADING=false /
+# PAPER_TRADING=false (fail-closed otherwise).
+#
+# Install (only when you intentionally start the validation window):
+#   1. Replace <ABSOLUTE_REPO_PATH> and <RUN_AS_USER> below.
+#   2. cp deploy/systemd/*.service.example /etc/systemd/system/  (drop the .example)
+#   3. systemctl daemon-reload
+#   4. systemctl enable --now ai-paper-bootstrap.service ai-paper-runner.service ai-news-ingest.service
+#   To start a FRESH validation later: stop+disable the units and delete
+#   <ABSOLUTE_REPO_PATH>/run/paper-run.env, then re-enable.
+
+[Unit]
+Description=P9 paper bootstrap (create run + freeze T0 universe once)
+After=network-online.target
+Wants=network-online.target
+# Idempotent: do not re-bootstrap if the run-id file already exists.
+ConditionPathExists=!<ABSOLUTE_REPO_PATH>/run/paper-run.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=<RUN_AS_USER>
+WorkingDirectory=<ABSOLUTE_REPO_PATH>
+ExecStart=<ABSOLUTE_REPO_PATH>/.venv/bin/python -m scripts.run_paper --startup-only --emit-run-id-file <ABSOLUTE_REPO_PATH>/run/paper-run.env
+
+[Install]
+WantedBy=multi-user.target
