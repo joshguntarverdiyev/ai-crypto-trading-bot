@@ -22,9 +22,11 @@ NOT registered on ``app.models.Base``) and is global (provider-wide, spanning ru
 
 from __future__ import annotations
 
+import fcntl
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import DateTime, Integer, String, Text, event, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -88,6 +90,33 @@ def _tune_sqlite(engine) -> None:  # noqa: ANN001
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA busy_timeout=5000")
         cur.close()
+
+
+def acquire_ingest_lock(lock_path: str):  # noqa: ANN201 (returns an open handle | None)
+    """Acquire an exclusive, non-blocking OS lock for single-instance ingestion.
+
+    Returns the open file handle (keep it to hold the lock) or ``None`` if another
+    live poller already holds it — the caller then exits WITHOUT any API call. A
+    crashed holder's ``flock`` is auto-released by the OS, so a stale process never
+    permanently blocks a future start; a normal shutdown releases it explicitly."""
+    path = Path(lock_path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "w")  # noqa: SIM115 (handle intentionally kept open)
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def release_ingest_lock(handle) -> None:  # noqa: ANN001
+    if handle is None:
+        return
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
 
 
 def make_news_ingest_store(db_path: str) -> NewsIngestionStore:

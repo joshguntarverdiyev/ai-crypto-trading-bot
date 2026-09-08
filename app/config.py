@@ -468,14 +468,32 @@ class Settings(BaseSettings):
 
         return CostScenario(self.cost_scenario)
 
+    def universe_base_assets(self) -> tuple[str, ...]:
+        """The deduped UPPER base assets of the configured symbol universe
+        (``market_symbols``), in a stable order. This is the AUTHORITATIVE source
+        for news tickers + known-asset recognition — dynamic (reads config, never
+        hardcodes the 30 symbols); with the default BTC/ETH universe it returns
+        ``("BTC", "ETH")`` so existing behavior is unchanged."""
+        from app.market_data.models import Symbol
+
+        seen: list[str] = []
+        for raw in self.market_symbols:
+            base = Symbol.parse(raw).base.upper()
+            if base not in seen:
+                seen.append(base)
+        return tuple(seen)
+
     def news_config(self) -> NewsConfig:
         from app.news.config import NewsConfig
 
+        # known_assets = explicit config UNION the universe bases (universe-driven,
+        # additive; unknown/non-universe assets stay ignored by normalization).
+        known = list(dict.fromkeys([*self.news_known_assets, *self.universe_base_assets()]))
         return NewsConfig(
             max_news_age=timedelta(seconds=self.news_max_age_seconds),
             dedup_window=timedelta(seconds=self.news_dedup_window_seconds),
             require_known_availability=self.news_require_known_availability,
-            known_assets=tuple(self.news_known_assets),
+            known_assets=tuple(known),
         )
 
     def ai_config(self) -> AIConfig:
@@ -630,11 +648,15 @@ class Settings(BaseSettings):
     def crypto_news_config(self):  # noqa: ANN201 (return type imported lazily)
         from app.news.cryptonews_adapter import CryptoNewsConfig
 
+        # tickers = the authoritative universe bases (dynamic; one global request
+        # passes them comma-separated). Falls back to the BTC/ETH default if empty.
+        tickers = self.universe_base_assets()
         return CryptoNewsConfig(
             token=self.crypto_news_api_token,
             base_url=self.crypto_news_base_url,
             items=self.crypto_news_items,
             max_pages=self.crypto_news_max_pages,
+            tickers=tickers or ("BTC", "ETH"),
         )
 
     def notifications_config(self) -> NotificationsConfig:

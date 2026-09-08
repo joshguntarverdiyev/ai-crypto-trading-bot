@@ -25,7 +25,12 @@ import signal
 from app.config import load_settings
 from app.logging_config import configure_logging
 from app.news.cryptonews_adapter import CryptoNewsApiAdapter
-from app.news.ingestion import NewsIngestionStore, make_news_ingest_store
+from app.news.ingestion import (
+    NewsIngestionStore,
+    acquire_ingest_lock,
+    make_news_ingest_store,
+    release_ingest_lock,
+)
 from app.time_utils import utc_now
 
 log = logging.getLogger("scripts.run_news_ingest")
@@ -54,6 +59,50 @@ def _install_graceful_stop() -> None:
     signal.signal(signal.SIGTERM, _handler)
 
 
+def run(settings, *, iterations: int, supervise: bool, sleep=None) -> int:  # noqa: ANN001
+    """Lock-guarded ingestion. A SECOND live instance acquires no lock and returns
+    immediately WITHOUT any API call (single-instance safety). The lock is released
+    on graceful shutdown; a crash auto-releases it (OS flock) so restart is safe."""
+    import time as _time
+
+    sleep_fn = sleep or _time.sleep
+    lock_path = f"{settings.news_ingest_db_path}.lock"
+    lock = acquire_ingest_lock(lock_path)
+    if lock is None:
+        log.warning(
+            "another news-ingest instance already holds %s; exiting (0 API calls)", lock_path
+        )
+        return 0
+
+    try:
+        cfg = settings.crypto_news_config()
+        # Fail-closed: CryptoNewsApiAdapter raises if the token is empty (never invented).
+        adapter = CryptoNewsApiAdapter(cfg)
+        store = make_news_ingest_store(settings.news_ingest_db_path)
+        interval = settings.crypto_news_poll_seconds
+        log.info("news ingest start: db=%s interval=%ss items=%s tickers=%d supervise=%s "
+                 "(token redacted)", settings.news_ingest_db_path, interval, cfg.items,
+                 len(cfg.tickers), supervise)
+        try:
+            if supervise:
+                _install_graceful_stop()
+                while True:
+                    poll_once(adapter, store)
+                    sleep_fn(interval)
+            else:
+                for i in range(max(1, iterations)):
+                    poll_once(adapter, store)
+                    if i + 1 < max(1, iterations):
+                        sleep_fn(interval)
+        except KeyboardInterrupt:
+            log.info("news ingest stop requested: shutting down gracefully")
+    finally:
+        release_ingest_lock(lock)  # release on normal shutdown; crash → OS releases
+
+    log.info("news ingest done (no orders, no decisions)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Crypto News API ingestion poller (Phase 9).")
     parser.add_argument("--iterations", type=int, default=1, help="polls to run (finite mode)")
@@ -62,33 +111,7 @@ def main() -> int:
 
     settings = load_settings()
     configure_logging(settings)
-
-    cfg = settings.crypto_news_config()
-    # Fail-closed: CryptoNewsApiAdapter raises if the token is empty (never invented).
-    adapter = CryptoNewsApiAdapter(cfg)
-    store = make_news_ingest_store(settings.news_ingest_db_path)
-    interval = settings.crypto_news_poll_seconds
-    log.info("news ingest start: db=%s interval=%ss supervise=%s (token redacted)",
-             settings.news_ingest_db_path, interval, args.supervise)
-
-    import time as _time
-
-    try:
-        if args.supervise:
-            _install_graceful_stop()
-            while True:
-                poll_once(adapter, store)
-                _time.sleep(interval)
-        else:
-            for i in range(max(1, args.iterations)):
-                poll_once(adapter, store)
-                if i + 1 < max(1, args.iterations):
-                    _time.sleep(interval)
-    except KeyboardInterrupt:
-        log.info("news ingest stop requested: shutting down gracefully")
-
-    log.info("news ingest done (no orders, no decisions)")
-    return 0
+    return run(settings, iterations=args.iterations, supervise=args.supervise)
 
 
 if __name__ == "__main__":
