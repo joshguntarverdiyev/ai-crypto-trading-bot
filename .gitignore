@@ -15,6 +15,10 @@ credentials/
 data/*
 !data/.gitkeep
 
+# --- P9 runtime state (systemd bootstrap writes run/paper-run.env; NEVER commit) ---
+/run/
+paper-run.env
+
 # --- logs ---
 logs/*
 !logs/.gitkeep
