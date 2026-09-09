@@ -17,6 +17,8 @@
 Description=P9 crypto-news ingestion poller (follows the active run)
 After=ai-paper-runner.service network-online.target
 Wants=ai-paper-runner.service
+# Retry indefinitely while waiting for the run to become running+fresh (0 API calls each try).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -25,8 +27,6 @@ WorkingDirectory=<ABSOLUTE_REPO_PATH>
 ExecStart=<ABSOLUTE_REPO_PATH>/.venv/bin/python -m scripts.run_news_ingest --supervise --follow-active-run
 Restart=on-failure
 RestartSec=30
-# Retry indefinitely while waiting for the run to become running+fresh (0 API calls each try).
-StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target

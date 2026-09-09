@@ -16,6 +16,8 @@
 Description=P9 paper runner (supervise; resumes the frozen run)
 After=ai-paper-bootstrap.service network-online.target
 Requires=ai-paper-bootstrap.service
+# Don't latch into 'failed' while retrying (e.g. brief lock overlap on restart).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -28,8 +30,6 @@ Restart=on-failure
 RestartSec=15
 TimeoutStopSec=30
 KillSignal=SIGTERM
-# Don't latch into 'failed' while retrying (e.g. brief lock overlap on restart).
-StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target
