@@ -283,6 +283,41 @@ def record_prereg_digest(main_sf: sessionmaker[Session], run_id: str, digest: st
             row.prereg_digest = digest
 
 
+def verify_prereg_on_resume(
+    main_sf: sessionmaker[Session], run_id: str, expected_digest: str
+) -> None:
+    """Fail-closed pre-registration check on RESUME (read-only; never mutates).
+
+    The objective validation configuration must be locked BEFORE any results are
+    observed. On resume we recompute the expected digest and compare it to the value
+    persisted at run creation:
+
+    * row missing        → return (defer to ``resume_paper_run``'s canonical
+      "unknown run_id" error; do not mask it).
+    * ``prereg_digest`` is NULL → an invalid/incomplete P9 run (pre-registration was
+      never locked); fail closed rather than silently locking it late on resume.
+    * persisted ≠ expected → the validation configuration changed since the lock;
+      fail closed (the digest is what makes results defensible).
+    """
+    with session_scope(main_sf) as session:
+        row = session.get(PaperTradingRunRecord, run_id)
+        if row is None:
+            return  # unknown run → let resume_paper_run raise the canonical error
+        persisted = row.prereg_digest
+    if persisted is None:
+        raise PaperRunError(
+            f"run_id={run_id} has no pre-registration digest (prereg_digest is NULL): "
+            "invalid/incomplete P9 run — refusing to resume (fail-closed). The objective "
+            "config must be locked at run creation; re-bootstrap a fresh run."
+        )
+    if persisted != expected_digest:
+        raise PaperRunError(
+            f"run_id={run_id} pre-registration mismatch: the validation configuration "
+            "changed since it was locked (persisted digest != recomputed digest). Refusing "
+            "to resume (fail-closed). Restore the original config or start a new run."
+        )
+
+
 def close_paper_run(
     main_sf: sessionmaker[Session], run_id: str, *, status: str = "stopped"
 ) -> None:

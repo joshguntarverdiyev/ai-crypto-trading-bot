@@ -44,7 +44,9 @@ from app.paper.store import (
     acquire_run_lock,
     make_run_session_factory,
     open_paper_run,
+    record_prereg_digest,
     resume_paper_run,
+    verify_prereg_on_resume,
 )
 from app.portfolio.store import PortfolioStore
 from app.regime.classifier import RegimeClassifier
@@ -180,6 +182,11 @@ def build_paper_system(
         "ai_analyst_version": AI_ANALYST_VERSION,
     }
 
+    # Pre-registration (§35.4): the objective validation config is locked as a digest
+    # BEFORE any boundary is processed — persisted on a NEW run, verified (fail-closed)
+    # on RESUME. Reuses the single preregistration()/record_prereg_digest() authority.
+    from app.paper.metrics import preregistration  # lazy: avoid pulling P7 tooling at import
+
     # OS file lock is the live single-writer guard (acquired before any catalog write).
     took_over = False
     if run_id is None:
@@ -188,9 +195,15 @@ def build_paper_system(
         open_paper_run(
             main_session_factory, cfg, versions=versions, owner_token=owner_token, run_id=run_id
         )
+        # Lock the pre-registration digest before the runner can process a boundary.
+        record_prereg_digest(main_session_factory, run_id, preregistration(run_id, cfg).digest)
         run_sf = make_run_session_factory(cfg, run_id, create=False)
     else:
         lock = acquire_run_lock(cfg, run_id)
+        # Fail closed BEFORE claiming ownership if the locked config changed / is missing.
+        verify_prereg_on_resume(
+            main_session_factory, run_id, preregistration(run_id, cfg).digest
+        )
         run_sf, took_over = resume_paper_run(
             main_session_factory, cfg, run_id, owner_token=owner_token
         )
