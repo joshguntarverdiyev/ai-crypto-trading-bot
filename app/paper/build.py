@@ -10,6 +10,7 @@ conservative-settle-margin (news), or advisory-only (Claude). Fail-closed
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,6 +58,8 @@ from app.sizing.sizer import PositionSizer
 from app.strategy.config import STRATEGY_VERSION
 from app.strategy.generator import CandidateGenerator
 from app.time_utils import utc_now
+
+log = logging.getLogger("app.paper.build")
 
 
 def _market_adapter(settings: Settings, cfg: PaperValidationConfig) -> ExchangeAdapter:
@@ -265,7 +268,12 @@ def build_paper_system(
     runner._lock = lock  # hold the OS lock for the runner's lifetime
 
     if notifier is not None:
-        notifier.send_alert(alerts.restart_alert(run_id, took_over=took_over, at=utc_now()))
+        # Startup alert must never block a run from starting: a notifier/transport
+        # failure is swallowed + logged secret-safely (§17). Alert is still attempted.
+        try:
+            notifier.send_alert(alerts.restart_alert(run_id, took_over=took_over, at=utc_now()))
+        except Exception:
+            log.warning("paper notifier startup send failed; run start unaffected")
     return runner, run_id
 
 

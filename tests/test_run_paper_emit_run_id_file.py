@@ -29,7 +29,7 @@ def _wire(monkeypatch, tmp_path, *, run_id_out):
         return load_settings(_env_file=None, database_url=f"sqlite:///{tmp_path}/main.db",
                              paper_validation_enabled=True)
 
-    def fake_start(settings, main_sf, *, now, run_id=None):
+    def fake_start(settings, main_sf, *, now, run_id=None, notifier=None):
         return _SpyRunner(), run_id or run_id_out, "hash123", now
 
     monkeypatch.setattr(run_paper, "load_settings", fake_load_settings)

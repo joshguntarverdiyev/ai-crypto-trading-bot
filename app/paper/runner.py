@@ -18,6 +18,7 @@ runner never needs to re-trip it for risk reasons.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -38,6 +39,8 @@ from app.regime.classifier import RegimeClassifier
 from app.risk.kill_switch import KillSwitch, KillSwitchStatus
 from app.strategy.config import STRATEGY_VERSION
 from app.time_utils import ensure_utc, monotonic, utc_now
+
+log = logging.getLogger("app.paper.runner")
 
 # Drawdown alert step (fraction): alert once per crossed bucket to limit spam.
 _DRAWDOWN_ALERT_STEP = 0.05
@@ -97,8 +100,15 @@ class PaperRunner:
             )
 
     def _alert(self, alert) -> None:
-        if self._notifier is not None:
+        # A notifier/transport failure must NEVER affect trading/risk (§17): swallow
+        # any error and log a secret-safe message (no exception text — an httpx error
+        # could embed the bot-token URL). Alert is still attempted.
+        if self._notifier is None:
+            return
+        try:
             self._notifier.send_alert(alert)
+        except Exception:
+            log.warning("paper notifier send failed; execution unaffected")
 
     def boundary(self, now: datetime) -> datetime:
         """Decision time = close of the most recently completed primary candle."""

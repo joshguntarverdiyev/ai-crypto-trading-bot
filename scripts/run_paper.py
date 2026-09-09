@@ -43,6 +43,7 @@ from app.config import load_settings
 from app.database import init_db, make_engine, make_session_factory
 from app.exceptions import PaperRunError
 from app.logging_config import configure_logging
+from app.notifications.factory import build_notifier
 from app.paper.build import start_paper_system
 from app.paper.store import close_paper_run
 from app.time_utils import utc_now
@@ -120,6 +121,17 @@ def main() -> int:
         settings.paper_trading, settings.paper_validation_enabled,
     )
 
+    # Outbound Telegram notifier (None when disabled). Built ONLY here — the
+    # production startup boundary — and threaded into the runner via start_paper_system.
+    # Outbound alerts only; inbound stop-controls stay gated by TELEGRAM_ALLOW_CONTROLS.
+    # secrets drive redaction; the bot token is never logged.
+    ncfg = settings.notifications_config()
+    notifier = build_notifier(ncfg, secrets=tuple(settings.secret_values()))
+    log.info(
+        "paper notifications: enabled=%s transport=%s controls=%s",
+        ncfg.enabled, ncfg.transport.value, ncfg.allow_controls,
+    )
+
     # P9 startup orchestration: for a universe-enabled run this performs the T0
     # selection + P1 history screen ONCE, persists the frozen universe into the run's
     # own DB, and passes the exact frozen ordered symbols to build_paper_system. A
@@ -129,7 +141,7 @@ def main() -> int:
     t0 = utc_now()
     try:
         runner, run_id, universe_hash, universe_t0 = start_paper_system(
-            settings, main_sf, now=t0, run_id=args.run_id
+            settings, main_sf, now=t0, run_id=args.run_id, notifier=notifier
         )
     except PaperRunError as exc:
         log.error("P9 startup FAILED (fail-closed; no run started): %s", exc)

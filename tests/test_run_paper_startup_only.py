@@ -33,7 +33,7 @@ def _wire(monkeypatch, tmp_path, *, runner, universe_hash="hash123"):
         return load_settings(_env_file=None, database_url=f"sqlite:///{tmp_path}/main.db",
                              paper_validation_enabled=True)
 
-    def fake_start(settings, main_sf, *, now, run_id=None):
+    def fake_start(settings, main_sf, *, now, run_id=None, notifier=None):
         calls["start"] += 1
         calls["start_kwargs"] = {"run_id": run_id, "now": now}
         return runner, run_id or "new-run-1", universe_hash, now
@@ -134,7 +134,7 @@ def test_frozen_universe_log_uses_returned_t0(monkeypatch, tmp_path, caplog) -> 
         return load_settings(_env_file=None, database_url=f"sqlite:///{tmp_path}/main.db",
                              paper_validation_enabled=True)
 
-    def fake_start(settings, main_sf, *, now, run_id=None):
+    def fake_start(settings, main_sf, *, now, run_id=None, notifier=None):
         # simulate a RESUME: return a frozen T0 that DIFFERS from `now` (the process clock)
         calls["n"] += 1
         assert now != frozen_t0
