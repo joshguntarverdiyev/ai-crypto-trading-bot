@@ -1,0 +1,36 @@
+# NON-ACTIVE systemd TEMPLATE — Phase 9 paper runner (supervise).
+#
+# EXAMPLE only. NOT installed, NOT enabled, starts NO runtime.
+#
+# Resumes the SAME run created by ai-paper-bootstrap (universe never reselected).
+# The run_id comes from the bootstrap-written EnvironmentFile (${PAPER_RUN_ID}) —
+# never hardcoded here. Restart=on-failure: a crash/SIGKILL auto-resumes the same
+# run (OS-lock release + stale-heartbeat takeover); a graceful `systemctl stop`
+# (SIGTERM ⇒ exit 0) stays down and does not fight the operator.
+#
+# SECURITY: NO secrets here. Credentials come from the git-ignored `.env` in
+# /home/p9/ai-crypto-trading-bot. `.env`: PAPER_VALIDATION_ENABLED=true, LIVE_TRADING=false,
+# PAPER_TRADING=false.
+
+[Unit]
+Description=P9 paper runner (supervise; resumes the frozen run)
+After=ai-paper-bootstrap.service network-online.target
+Requires=ai-paper-bootstrap.service
+
+[Service]
+Type=simple
+User=p9
+WorkingDirectory=/home/p9/ai-crypto-trading-bot
+EnvironmentFile=/etc/ai-crypto-trader/app.env
+# run_id published by the one-shot bootstrap (PAPER_RUN_ID=<uuid>).
+EnvironmentFile=/home/p9/ai-crypto-trading-bot/run/paper-run.env
+ExecStart=/home/p9/ai-crypto-trading-bot/.venv/bin/python -m scripts.run_paper --supervise --run-id ${PAPER_RUN_ID}
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+KillSignal=SIGTERM
+# Don't latch into 'failed' while retrying (e.g. brief lock overlap on restart).
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

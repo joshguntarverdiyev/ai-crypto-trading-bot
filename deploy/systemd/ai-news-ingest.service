@@ -1,0 +1,33 @@
+# NON-ACTIVE systemd TEMPLATE — Phase 9 crypto-news ingestion poller.
+#
+# EXAMPLE only. NOT installed, NOT enabled, starts NO runtime.
+#
+# Follows the ACTIVE paper run automatically: --follow-active-run discovers the
+# UNIQUE run that is status='running' with a fresh heartbeat and binds ONLY to that
+# run's FROZEN T0 universe (via the unchanged fail-closed load_frozen_universe). No
+# run UUID in this unit. If there is no active run — or it is ambiguous/stale — the
+# poller FAILS CLOSED with ZERO API calls (exit 1); Restart=on-failure then retries
+# until the runner is up. A deliberate `systemctl stop` (SIGTERM ⇒ exit 0) stays down.
+#
+# This process places NO orders, runs NO strategy/risk/Claude pipeline, and writes
+# ONLY to the isolated ingestion DB. SECURITY: the Crypto News token is read from the
+# git-ignored `.env` in /home/p9/ai-crypto-trading-bot; never put it in this unit.
+
+[Unit]
+Description=P9 crypto-news ingestion poller (follows the active run)
+After=ai-paper-runner.service network-online.target
+Wants=ai-paper-runner.service
+
+[Service]
+Type=simple
+User=p9
+WorkingDirectory=/home/p9/ai-crypto-trading-bot
+EnvironmentFile=/etc/ai-crypto-trader/app.env
+ExecStart=/home/p9/ai-crypto-trading-bot/.venv/bin/python -m scripts.run_news_ingest --supervise --follow-active-run
+Restart=on-failure
+RestartSec=30
+# Retry indefinitely while waiting for the run to become running+fresh (0 API calls each try).
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
