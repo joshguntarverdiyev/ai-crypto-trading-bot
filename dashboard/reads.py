@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -26,6 +26,7 @@ from app.models import (
     PaperFillRecord,
     PaperOrderRecord,
     PaperTradingRunRecord,
+    PaperUniverseRecord,
     PortfolioSnapshotRecord,
     PositionRecord,
     RiskDecisionRecord,
@@ -33,6 +34,9 @@ from app.models import (
     ShadowRunRecord,
     SystemEvent,
 )
+
+if TYPE_CHECKING:  # annotation only — never imported at runtime by the dashboard
+    from app.paper.config import PaperValidationConfig
 
 
 def _s(value: Any) -> Any:
@@ -377,3 +381,108 @@ def paper_health(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | Non
         "last_decision_time": _s(last), "decision_count": total,
         "kill_switch": kill_switch_state(run_sf),
     }
+
+
+# --- additive per-run audit views (read the run's OWN DB, read-only) ----------
+# Under P9 D-ISO the Claude/news/risk/events/orders/fills audit rows live in the
+# run's OWN database (written by the frozen P6 recorder), NOT the MAIN catalog DB.
+# These thin views open that DB strictly read-only (``mode=ro``; see
+# ``_open_run_readonly``) and reuse the EXISTING record helpers — no new query
+# shapes, no writes, no external calls, no trade authority. Unknown run ⇒ empty.
+def _run_sf_ro(sf: sessionmaker[Session], run_id: str) -> sessionmaker[Session] | None:
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return None
+    return _open_run_readonly(cat["db_path"])
+
+
+def paper_claude(sf: sessionmaker[Session], run_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    run_sf = _run_sf_ro(sf, run_id)
+    return [] if run_sf is None else recent_claude_decisions(run_sf, limit)
+
+
+def paper_news(sf: sessionmaker[Session], run_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    run_sf = _run_sf_ro(sf, run_id)
+    return [] if run_sf is None else recent_news(run_sf, limit)
+
+
+def paper_risk(sf: sessionmaker[Session], run_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    run_sf = _run_sf_ro(sf, run_id)
+    return [] if run_sf is None else recent_risk_decisions(run_sf, limit)
+
+
+def paper_events(sf: sessionmaker[Session], run_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    run_sf = _run_sf_ro(sf, run_id)
+    return [] if run_sf is None else recent_system_events(run_sf, limit)
+
+
+def paper_orders(sf: sessionmaker[Session], run_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    run_sf = _run_sf_ro(sf, run_id)
+    return [] if run_sf is None else recent_paper_orders(run_sf, limit)
+
+
+def paper_fills(sf: sessionmaker[Session], run_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    run_sf = _run_sf_ro(sf, run_id)
+    return [] if run_sf is None else recent_paper_fills(run_sf, limit)
+
+
+def paper_universe(sf: sessionmaker[Session], run_id: str) -> dict[str, Any] | None:
+    """The authoritative FROZEN T0 universe persisted in the run DB (never re-selected).
+
+    Exposes the persisted symbols (by rank), the selection hash, and the authoritative
+    T0 (``min(selected_at)``). Read-only; does not query Binance or re-run selection."""
+    run_sf = _run_sf_ro(sf, run_id)
+    if run_sf is None:
+        return None
+    with session_scope(run_sf) as session:
+        rows = session.scalars(
+            select(PaperUniverseRecord).order_by(PaperUniverseRecord.rank)
+        ).all()
+        if not rows:
+            return None
+        hashes = {r.selection_hash for r in rows}
+        t0 = min(r.selected_at for r in rows)
+        symbols = [
+            {
+                "symbol": r.symbol, "rank": r.rank,
+                "quote_volume_24h": _s(r.quote_volume_24h), "selected_at": _s(r.selected_at),
+            }
+            for r in rows
+        ]
+    return {
+        "run_id": run_id, "count": len(symbols),
+        # A single consistent hash is the invariant; expose it + a flag rather than guess.
+        "selection_hash": next(iter(hashes)) if len(hashes) == 1 else None,
+        "selection_hash_consistent": len(hashes) == 1,
+        "t0": _s(t0), "symbols": symbols,
+    }
+
+
+def paper_validation(
+    sf: sessionmaker[Session], run_id: str, cfg: PaperValidationConfig | None = None
+) -> dict[str, Any] | None:
+    """The authoritative pre-registered validation evidence + gate statuses.
+
+    Reuses the ONE evaluator ``app.paper.metrics.evaluate`` (no second algorithm, no
+    threshold changes). Read-only. When the validation config is unavailable, or the
+    run has too little data to evaluate, returns an explicit ``PENDING`` state rather
+    than inventing a result (distinguishing 'not enough data yet' from a real zero)."""
+    cat = _catalog_row(sf, run_id)
+    if cat is None:
+        return None
+    if cfg is None:
+        return {"available": False, "state": "PENDING",
+                "reason": "validation config unavailable"}
+    # Echo the pre-registered window (non-secret) so the UI can render progress
+    # (Day X / N) without hardcoding it. This does NOT change the evaluator.
+    window = {"validation_days": cfg.validation_days,
+              "universe_max_symbols": cfg.universe_max_symbols}
+    from app.paper.metrics import evaluate  # lazy; authoritative evaluator (never re-implemented)
+
+    run_sf = _open_run_readonly(cat["db_path"])
+    try:
+        evidence = evaluate(run_sf, cfg, run_id)
+    except Exception as exc:  # too little data / unexpected → PENDING, never fabricate
+        return {"available": False, "state": "PENDING",
+                "reason": f"insufficient data ({exc.__class__.__name__})", **window}
+    return {"available": True, "state": "EVALUATED", **window, **evidence.to_dict()}

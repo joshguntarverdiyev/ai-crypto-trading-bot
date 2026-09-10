@@ -38,10 +38,19 @@ def main() -> None:
 
     from dashboard.app import create_app  # lazy: imports FastAPI only here
 
+    # Authoritative gate config for /api/paper/validation (the same evaluator the
+    # runner uses; read-only). Fail-soft: the dashboard never depends on it — if it
+    # can't be built, the validation endpoint simply reports PENDING.
+    try:
+        paper_cfg = settings.paper_validation_config()
+    except Exception:  # noqa: BLE001 — dashboard must never crash on config edge cases
+        paper_cfg = None
+
     app = create_app(
         session_factory=session_factory,
         kill_switch=KillSwitch(session_factory),
         config=dash_cfg,
+        paper_validation_config=paper_cfg,
     )
 
     import uvicorn

@@ -11,8 +11,11 @@ app holds no exchange/Claude credentials (Master Plan §17 / plan §23).
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -23,6 +26,9 @@ from app.time_utils import utc_now
 from dashboard import reads
 from dashboard.auth import make_control_guard
 from dashboard.config import DashboardConfig
+
+if TYPE_CHECKING:  # annotation only — not imported at runtime by the dashboard
+    from app.paper.config import PaperValidationConfig
 
 
 class ControlRequest(BaseModel):
@@ -46,8 +52,11 @@ def create_app(
     session_factory: sessionmaker[Session],
     kill_switch: StopControl,
     config: DashboardConfig | None = None,
+    paper_validation_config: PaperValidationConfig | None = None,
+    static_dir: str | None = None,
 ) -> FastAPI:
     cfg = config or DashboardConfig()
+    pvc = paper_validation_config  # authoritative gate config for /api/paper/validation
     guard = make_control_guard(cfg)
     app = FastAPI(title="aicryptotrader dashboard (read-only)", version="p7")
     sf = session_factory
@@ -138,6 +147,42 @@ def create_app(
     def paper_health(run_id: str) -> dict[str, object] | None:
         return reads.paper_health(sf, run_id)
 
+    # --- additive per-run audit views (read the run's OWN DB, read-only) ---
+    # These populate the Claude/news/risk/events/orders/fills/universe/validation
+    # panels for the live P9 run (whose audit rows live in the per-run DB, not the
+    # MAIN catalog DB). All GET; all read-only; no external calls; no trade path.
+    @app.get("/api/paper/claude")
+    def paper_claude(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_claude(sf, run_id, limit)
+
+    @app.get("/api/paper/news")
+    def paper_news(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_news(sf, run_id, limit)
+
+    @app.get("/api/paper/risk")
+    def paper_risk(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_risk(sf, run_id, limit)
+
+    @app.get("/api/paper/events")
+    def paper_events(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_events(sf, run_id, limit)
+
+    @app.get("/api/paper/orders")
+    def paper_orders(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_orders(sf, run_id, limit)
+
+    @app.get("/api/paper/fills")
+    def paper_fills(run_id: str, limit: int = 50) -> list[dict[str, object]]:
+        return reads.paper_fills(sf, run_id, limit)
+
+    @app.get("/api/paper/universe")
+    def paper_universe(run_id: str) -> dict[str, object] | None:
+        return reads.paper_universe(sf, run_id)
+
+    @app.get("/api/paper/validation")
+    def paper_validation(run_id: str) -> dict[str, object] | None:
+        return reads.paper_validation(sf, run_id, pvc)
+
     # --- the ONLY two mutating endpoints (stop-direction only) ---
     @app.post("/control/pause")
     def control_pause(body: ControlRequest, _: None = Depends(guard)) -> dict[str, object]:
@@ -150,5 +195,13 @@ def create_app(
         _audit_control(sf, "halt", body.reason)
         kill_switch.halt(f"dashboard:{body.reason}", utc_now())
         return {"ok": True, "action": "halt"}
+
+    # --- static visual UI (read-only SPA) at /ui/ ---
+    # StaticFiles is a GET/HEAD-only Mount (NOT a mutating Route), so the app still
+    # has exactly two mutating routes. It only serves the packaged dashboard/static
+    # assets; it introduces no trading path and no new API. GET "/" stays JSON.
+    ui_dir = Path(static_dir) if static_dir else Path(__file__).resolve().parent / "static"
+    if ui_dir.is_dir():
+        app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
 
     return app

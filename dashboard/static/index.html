@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>P9 Trading Monitor</title>
+  <link rel="stylesheet" href="vendor/uPlot.min.css" />
+  <link rel="stylesheet" href="css/terminal.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo"><b>P9</b><span>AI&nbsp;CRYPTO&nbsp;TRADER</span></div>
+        <div class="sub">Paper Validation<br />Terminal</div>
+      </div>
+      <nav class="nav" id="nav"><!-- grouped nav injected by app.js --></nav>
+      <div class="sidefoot">
+        <div class="lbl">P9 Paper Validation</div>
+        <div class="st" id="side-status"><span class="sdot"></span><span>—</span></div>
+        <div class="controls-note" id="side-controls">Controls disabled · read-only</div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="main">
+      <header class="topbar">
+        <button class="menu-btn" id="menu-btn" aria-label="menu">≡</button>
+        <div class="title">P9 Trading Monitor</div>
+        <div class="pill" id="hdr-status"><span class="sdot"></span><span>—</span></div>
+        <div class="spacer"></div>
+        <div class="meta">
+          <div class="chip" id="chip-day"><span class="k">Day</span><span class="v" id="hdr-day">—</span></div>
+          <div class="chip" id="chip-assets"><span class="k">Assets</span><span class="v" id="hdr-assets">—</span></div>
+          <div class="chip"><span class="k">Run ID</span><span class="v mono" id="hdr-run" title="">—</span></div>
+          <div class="chip"><span class="k">Last update</span><span class="v" id="hdr-updated">—</span></div>
+          <div class="chip refresh"><span class="k">Live</span><span class="v" id="hdr-refresh"><span class="sdot blue live"></span></span></div>
+        </div>
+      </header>
+
+      <main class="content" id="view"><!-- pages injected by app.js --></main>
+    </div>
+  </div>
+
+  <script src="vendor/uPlot.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+/*
+ * Chart container styles for the self-contained EquityChart (see uPlot.min.js).
+ * Not the upstream uPlot stylesheet (offline environment; see the .js header).
+ */
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+}
+.chart-wrap > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
