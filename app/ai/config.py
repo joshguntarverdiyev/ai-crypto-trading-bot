@@ -20,6 +20,7 @@ class ModelClass(StrEnum):
     HAIKU = "haiku"
     SONNET = "sonnet"
     OPUS = "opus"
+    GEMINI_FLASH = "gemini_flash"  # non-Claude analyst tier (Google Gemini 3.6 Flash)
 
 
 @dataclass(frozen=True)
@@ -30,12 +31,13 @@ class AIConfig:
     haiku_model_id: str = "claude-haiku-4-5-20251001"
     sonnet_model_id: str = "claude-sonnet-4-6"
     opus_model_id: str = "claude-opus-4-8"
+    gemini_model_id: str = "gemini-3.6-flash"  # Google Gemini 3.6 Flash (GA)
     analyst_enabled: bool = True
     timeout_seconds: float = 20.0
     uncertain_policy: str = "hold"  # only "hold" supported in P5 (§6)
 
     def __post_init__(self) -> None:
-        for name in ("haiku_model_id", "sonnet_model_id", "opus_model_id"):
+        for name in ("haiku_model_id", "sonnet_model_id", "opus_model_id", "gemini_model_id"):
             if not getattr(self, name):
                 raise ValueError(f"{name} must be non-empty")
         if self.timeout_seconds <= 0:
@@ -48,6 +50,7 @@ class AIConfig:
             ModelClass.HAIKU: self.haiku_model_id,
             ModelClass.SONNET: self.sonnet_model_id,
             ModelClass.OPUS: self.opus_model_id,
+            ModelClass.GEMINI_FLASH: self.gemini_model_id,
         }[model_class]
 
     @property

@@ -31,6 +31,7 @@ class NewsSource(StrEnum):
 class AIProvider(StrEnum):
     FIXTURE = "fixture"  # offline (default)
     ANTHROPIC = "anthropic"  # real Anthropic SDK; off by default
+    GEMINI = "gemini"  # real Google Gemini SDK (advisory analyst); off by default
 
 
 @dataclass(frozen=True)

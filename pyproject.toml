@@ -44,6 +44,12 @@ shadow = [
     "httpx>=0.27,<0.29",
     "anthropic>=0.40",
 ]
+# Google Gemini analyst provider (OFF by default; lazily imported inside
+# app/ai/gemini_provider.py; never required by the offline test suite). Enabling it
+# never enables trading and never requires a trading key.
+gemini = [
+    "google-genai>=1.0,<2",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "backtesting*", "dashboard*"]

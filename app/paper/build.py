@@ -103,6 +103,10 @@ def _analyst_provider(settings: Settings, cfg: PaperValidationConfig) -> Analyst
         from app.ai.anthropic_provider import AnthropicAnalystProvider
 
         return AnthropicAnalystProvider(api_key=settings.anthropic_api_key)
+    if cfg.ai_provider is AIProvider.GEMINI:
+        from app.ai.gemini_provider import GeminiAnalystProvider  # lazy: no SDK unless selected
+
+        return GeminiAnalystProvider(api_key=settings.google_api_key)
     return FixtureAnalystProvider("")  # offline default → schema_invalid → HOLD
 
 

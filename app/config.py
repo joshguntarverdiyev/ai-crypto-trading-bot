@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     exchange_api_key: str = ""
     exchange_api_secret: str = ""
     anthropic_api_key: str = ""
+    google_api_key: str = ""  # Google Gemini (advisory analyst); off/empty by default
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
@@ -156,6 +157,7 @@ class Settings(BaseSettings):
     ai_haiku_model_id: str = "claude-haiku-4-5-20251001"
     ai_sonnet_model_id: str = "claude-sonnet-4-6"
     ai_opus_model_id: str = "claude-opus-4-8"
+    ai_gemini_model_id: str = "gemini-3.6-flash"  # used iff analyst_model_class=gemini_flash
     ai_timeout_seconds: float = 20.0
     ai_uncertain_policy: str = "hold"
 
@@ -206,7 +208,7 @@ class Settings(BaseSettings):
     market_data_source: str = "fixture"  # fixture | ccxt
     market_data_exchange_id: str = ""  # public data-source id (required iff ccxt)
     news_source: str = "fixture"  # fixture | cryptopanic | cryptonewsapi
-    ai_provider: str = "fixture"  # fixture | anthropic
+    ai_provider: str = "fixture"  # fixture | anthropic | gemini
     shadow_primary_timeframe: str = "1h"
     shadow_confirm_timeframe: str = "4h"
     shadow_starting_equity: Decimal = Decimal("10000")  # HYPOTHETICAL; flat per boundary
@@ -352,6 +354,20 @@ class Settings(BaseSettings):
                 f"ai_analyst_model_class must be one of {[m.value for m in ModelClass]}, "
                 f"got {self.ai_analyst_model_class!r}"
             )
+        # Provider <-> model-class consistency (fail-closed): the Gemini provider must
+        # only ever be sent a Gemini model id, and vice-versa — otherwise a run would
+        # call one vendor with another vendor's model id.
+        is_gemini_provider = self.ai_provider == "gemini"
+        is_gemini_class = self.ai_analyst_model_class == "gemini_flash"
+        if is_gemini_provider != is_gemini_class:
+            raise ValueError(
+                "ai_provider='gemini' requires ai_analyst_model_class='gemini_flash' "
+                "(and vice-versa); got "
+                f"ai_provider={self.ai_provider!r}, ai_analyst_model_class="
+                f"{self.ai_analyst_model_class!r}"
+            )
+        if is_gemini_provider and not self.google_api_key:
+            raise ValueError("ai_provider='gemini' requires a non-empty GOOGLE_API_KEY")
         return self
 
     @model_validator(mode="after")
@@ -504,6 +520,7 @@ class Settings(BaseSettings):
             haiku_model_id=self.ai_haiku_model_id,
             sonnet_model_id=self.ai_sonnet_model_id,
             opus_model_id=self.ai_opus_model_id,
+            gemini_model_id=self.ai_gemini_model_id,
             analyst_enabled=self.ai_analyst_enabled,
             timeout_seconds=self.ai_timeout_seconds,
             uncertain_policy=self.ai_uncertain_policy,
@@ -687,6 +704,7 @@ class Settings(BaseSettings):
             self.exchange_api_key,
             self.exchange_api_secret,
             self.anthropic_api_key,
+            self.google_api_key,
             self.telegram_bot_token,
             self.dashboard_auth_token,
             self.crypto_news_api_token,
